@@ -1,0 +1,4970 @@
+/*************************************************************************n*
+	* System 	  : NCDEX Futures and Options Clearing and Settlement System
+
+	* Module      : NCDBLSDV.pc
+
+	* Purpose     : Update BC/ABC Security Deposits Valuation.
+	
+	* Arguments   : User / Password.
+	
+	* Date		  : 05-APR-2005
+
+	* Author      : Girish Thombare  (NSE.IT)
+****************************************************************************/
+/*
+
+# Revision 1.5  Changed for CR04572
+# Revision 1.4  2002/10/10  08:38:29  intstmgr
+# Code changed for FTR 828 for updateion of records to zero if the member has not sent
+the records. A sleep of 2 seconds has been introduced to keep a time interval between t
+wo files.
+#
+# Revision 1.3  2002/09/04  10:08:12  intstmgr
+# Code changed for CMR 105 for continuing with the processing of the rest of the files even if the current file is invalid.
+#
+# Revision 1.2  2002/08/26  08:58:30  intstmgr
+# Code changed for FTR 821(7,8) for detail record validation.
+#
+# Revision 1.1  2002/08/20  05:37:22  intstmgr
+# Code changed for FTR 821 .
+#
+
+*/	
+
+/******include section*******/
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <math.h>
+#include <time.h>  // Added for Linux Migration
+#include "IFOSMHED.h"
+
+/****** define section*******/
+
+#define PROGRAM					"NCDBLSDV"
+#define FILE_IDNTFR				"SEC"
+#define NO_OF_ARGUMENTS			3
+#define TRUE						1
+#define FALSE						0
+
+#define  MSG_IN         fprintf(stdout,"ENTERING IN FUNCTION <%s>\n",module);
+
+#define  MSG_OUT        fprintf(stdout,"EXITING OUT FUNCTION <%s>\n",module);
+
+#define DEBUG 
+#undef  DEBUG        
+
+#define DEBUG1
+#undef  DEBUG1 
+#define STEP
+#undef STEP    
+
+#define LOG_PREFIX           "SDV"
+#define FAILURE      "F"
+#define RETURN    "R"
+#define RUNNING	 3
+#define EXIT 2
+
+#define DT_LEN         9
+#define REF_DT_LEN     15
+
+#define STTS_LEN        1
+#define MEM_TYPE_LEN    2
+#define FIELD_CNT    7
+#define CNTRL_FIELD_CNT	8
+#define DATA_FIELD_CNT	6
+#define  FULLSTOP '.'
+#define  NEWLINE  '\n'
+#define COMMA           ','
+#define UNDERSCORE      '_'
+#define MEM_ARR         1000
+#define PATH_FILE_NAME  250
+#define FIL_BTCH_DT_FMT  'YYYYMMDD'
+#define BTCH_DT_FMT		 'DDMMYYYY'
+
+#define DATA_RECORD_LEN 2050
+#define CSTDN_CODE_LEN   6
+#define DEP_TYPE_LEN 4
+#define PRM_MBR_LEN  6
+#define CLM_LEN         7
+#define MEM_LEN         13
+#define TM_LEN			6
+#define FILE_NAME_CNT  5
+#define FILE_NAME 		40
+#define VAL_AMT_LEN      16
+#define SECDEPS_LEN  16
+#define COL_TYPE_LEN 4
+#define BTCH_NO_STR_LEN 4
+#define REC_TYPE_LEN  3
+#define BTCH_DT_LEN	 9
+#define NO_OF_RECS_LEN	8
+#define UPDT_DT_TIME_LEN 15
+#define DATE_LEN			30
+
+EXEC SQL INCLUDE sqlca;
+EXEC SQL INCLUDE oraca;
+
+struct hashinfo1 {
+        char hashkey[100];
+        struct hashinfo1 *nexthashptr;
+             };
+
+void init_hash_table1(struct hashinfo1* hashtable[MAX_HASH_TABLE_SIZE]);
+                            /* Initialize Hash Table               */
+
+void insert_hash_table1(struct hashinfo1* hashtable[MAX_HASH_TABLE_SIZE],char* item);
+                            /* Insert into Hash Table              */
+
+int search_hash_table1(struct hashinfo1* hashtable[MAX_HASH_TABLE_SIZE],char *search_str);
+                            /* Search from Hash Table              */
+
+/* Function prorotype */
+
+int start_up(int , char **);
+
+/* Function to initialize arrays for inserts or updates */
+void init_insert_array();
+void init_update_array();
+
+void house_keeping (void)   ;
+
+char * getdtm1();
+
+void put_mod (char *)     ; 
+
+int print_log(void)			;  	
+
+int ins_into_cltrl_cntrl();  /* Function to insert recs into CLTRL_CNTRL */
+
+int print_file_summ(void)	;
+
+int     chk_sys_stts(void)      ;
+
+/* Checks environment for input, return, success, fail files */
+
+int   chk_env();
+
+/*  Logs the summary of files processed */
+
+void  file_sum_log();
+
+/* Initialise the variables used in each file */
+
+void  init_file_var();
+
+/* Load data in hash tables */
+int build_hashtables();
+int build_secdeps_bc_hashtable();
+int build_secdeps_abc_hashtable();
+
+/**** Get file name details *****/
+
+int   get_file_namedet_n_split();
+
+/****** Validate file dtls ******/
+
+int  vldt_file_namedet();
+
+
+/* Function to sum up the individual valuation amounts */
+int sum_up_valuation_amount() ;  
+
+
+/* Splits the control record */
+int split_cntrl_rec();
+
+/* Split the data record */
+int split_data_rec_n_vldt_rec();
+
+/*Build Array for inserts and updates */ 
+int build_array_for_ins_updt();
+
+/******Function for moving the file to SUCCESS/FAILURE directory  *******/
+int   move_file(int);
+
+/****************** Read File********************* */
+int   open_read_split_vldt_file_rec();
+
+/***************Make the input string to  upper case*********************/
+int to_upper(char* input_field ,char* output_field ,int inplace);
+
+/*********Read control record ***********/
+int  read_control_record(); 
+
+/***** Check for the numeric values *******/
+/* Check ISNUMBER  */
+int chk_isnum(char *,int);
+
+/* Check IS positive NUMBER  */
+int chk_positnum();
+
+/* check if valid number */
+int chk_negnum();
+
+/** Validate date is in format **/
+int vldt_date1();
+
+/****** Declare Statement ********/
+int     sql_stmt        = 0      ;
+int 	ret_int=0,
+	code =0;	
+
+char  prefix       [100]    ;
+long  tot_files      = 0; /* No. of Files available in directory */
+long  tot_files_prcsd   = 0; /*No of Files successfully processed */
+long  tot_files_rejctd  = 0; /* No. of  Files failed */
+
+/**** Variables for file name & path name ******/
+char  seq_fname       [PATH_FILE_NAME];
+char  file_name   [FILE_NAME];
+
+/**** Variables for file and records processing *****/
+
+char    fil_prcs_flg    [STTS_LEN];
+char    datarecord              [DATA_RECORD_LEN];
+char 	controlrecord			  [DATA_RECORD_LEN];
+char    datarecord_ret          [DATA_RECORD_LEN];
+
+/**** Varibales for file name processing ******/
+
+char    fil_btch_dt             [DT_LEN];
+char    fil_btch_no_str			  [BTCH_NO_STR_LEN];
+char    fil_btch_no             [BTCH_NO_LEN];
+char    fil_cstdn_code          [CSTDN_CODE_LEN];
+char    fil_col_type            [COL_TYPE_LEN] ;
+
+/****** Variables for hash table ******************************/
+
+struct   hashinfo1* cm_clm_hashtable            [MAX_HASH_TABLE_SIZE];
+struct   hashinfo1* tm_hashtable      [MAX_HASH_TABLE_SIZE];
+struct 	hashinfo1* secdeps_bc_hashtable		[MAX_HASH_TABLE_SIZE];
+struct	hashinfo1* secdeps_abc_hashtable			[MAX_HASH_TABLE_SIZE];
+struct  hashinfo1* check_dup_hashtable		[MAX_HASH_TABLE_SIZE];
+
+/******* Variables used for file name generation  ***************/
+
+char    *getfile_env       ;
+char    *failfile_env         ;
+char    *succfile_env         ;
+char    failfile_name   [PATH_FILE_NAME];
+char    failfile_name1  [PATH_FILE_NAME];
+
+char file_cust[110];
+char tab_cust[110];
+
+FILE    *seq_fp   = NULL      ;
+FILE    *file_fp  = NULL      ;
+
+/*** Oracle declaration ****/
+EXEC SQL BEGIN DECLARE SECTION;
+
+varchar curr_dt   [DT_LEN]  ,
+		  sys_curr_date [DATE_LEN],
+		  proc_start_time [DATE_LEN],
+		  proc_end_time   [DATE_LEN],
+		  log_file_name   [60],
+		  db_fil_btch_dt[DT_LEN],
+		  btch_dt   [DT_LEN]	 ,
+		  ref_dt_time [REF_DT_LEN];
+		  
+varchar vc_fil_btch_dt [DT_LEN],
+		  vc_cntrl_btch_dt [DT_LEN],
+		  vc_cntrl_cstdn_code [CSTDN_CODE_LEN], 
+		  vc_cntrl_vltn_dt [DT_LEN],
+		  vc_cntrl_gross_vltn_amt [AMT_LEN],
+		  vc_cntrl_no_of_recs [NO_OF_RECS_LEN],
+		  vc_cntrl_net_vltn_amt [AMT_LEN],
+		  vc_fil_idntfr  [4],
+		  vc_fil_col_type [4],
+		  vc_fil_btch_no [BTCH_NO_LEN],
+		  vc_updt_dt_time [UPDT_DT_TIME_LEN],	
+		  vc_fil_cstdn_code [CSTDN_CODE_LEN];
+
+varchar vc_tm_code [TM_LEN],
+		  vc_clm_code [CLM_LEN];
+
+
+varchar cm_clm_code [MEM_ARR][CLM_LEN],
+		  tm_code     [MEM_ARR][TM_LEN],	
+		  sdp_bc_det   [MEM_ARR][SECDEPS_LEN],
+		  sdp_abc_det  [MEM_ARR] [SECDEPS_LEN];
+
+varchar	vc_sdp_mem_type   [MEM_TYPE_LEN],
+	  	  vc_sdp_mem_code   [CLM_LEN], 
+		  vc_sdp_cus_code  [CSTDN_CODE_LEN],
+		  vc_sdp_gross_val [VAL_AMT_LEN],
+		  vc_sdp_net_val   [VAL_AMT_LEN],
+		  vc_sdp_col_type  [COL_TYPE_LEN];			
+
+varchar ins_sdp_seg_id [MEM_ARR][STTS_LEN],
+		  ins_sdp_mem_type [MEM_ARR][MEM_TYPE_LEN],
+		  ins_sdp_mem_code [MEM_ARR][CLM_LEN],
+		  ins_sdp_rcv_dt   [MEM_ARR][DT_LEN],
+		  ins_sdp_lst_vltn_dt  [MEM_ARR][DT_LEN],
+		  ins_sdp_cus_code [MEM_ARR][CSTDN_CODE_LEN],
+		  ins_sdp_gross_val[MEM_ARR][VAL_AMT_LEN],
+		  ins_sdp_net_val [MEM_ARR][VAL_AMT_LEN],
+		  ins_sdp_bc_ind     [MEM_ARR][6], 		
+		  ins_sdp_type     [MEM_ARR][COL_TYPE_LEN];
+
+varchar updt_sdp_seg_id [MEM_ARR][STTS_LEN],
+        updt_sdp_mem_type [MEM_ARR][MEM_TYPE_LEN],
+        updt_sdp_mem_code [MEM_ARR][CLM_LEN],
+  	updt_sdp_rcv_dt   [MEM_ARR][DT_LEN], 
+  	updt_sdp_lst_vltn_dt [MEM_ARR][DT_LEN],
+        updt_sdp_cus_code [MEM_ARR][CSTDN_CODE_LEN],
+        updt_sdp_gross_val[MEM_ARR][VAL_AMT_LEN],
+        updt_sdp_net_val [MEM_ARR][VAL_AMT_LEN],
+  	updt_sdp_bc_ind     [MEM_ARR][5],
+        updt_sdp_type     [MEM_ARR][COL_TYPE_LEN];
+
+double total_gross_valuation =0.00,
+		 total_net_valuation =0.00,
+		 individual_gross_valuation = 0.00,
+		 individual_net_valuation = 0.00;
+
+long tot_recs =0;          /* No. of records in the file */
+long tot_recs_prcsd    =0 ;/* No. of records processed */
+long tot_recs_rjctd    =0 ; /* No. of records rejected */
+long recs_read =0;
+long recs_to_load =0,
+	  recs_load=0,
+	  total_recs_inserted=0,
+	  recs_details_not_sent=0, 
+	  total_recs_updated=0;
+	  
+long recs_to_update=0;
+long recs_to_insert =0;
+
+long record_number =0,
+	  recs_number_from =0;
+ 
+long  total_recs_read_succ = 0;
+long  total_recs_read      = 0;
+ 	 
+
+int vc_cntrl_btch_no  =0;
+int  vc_cntrl_det_btch_no = 0;
+
+int int_fil_btch_no =0,
+	 int_cntrl_btch_no;
+double control_gross_vltn_amt=0.0,
+		 control_net_vltn_amt =0.0;
+
+
+long control_no_of_recs =0;
+		int i =0;
+		int j=0,rec_no=0;
+
+/*Added for CR04572*/
+double comLimit=0.0,otherLimit=0.0;
+
+/*End of addition for CR04572*/ 
+/*this variables are used for to check duplicate record*/
+varchar	  main_blck_detail_dup_record[MEM_ARR][60];
+varchar	  vc_sdp_dup_code  [100];
+
+EXEC SQL END DECLARE SECTION;
+
+/****************************************************************************
+Function					: main()
+
+Summary						: Main function of the program.
+
+Input parameters     				: argv[1] - user/password
+						  argv[2] - file name.
+
+Called Functions     				: start_up();
+
+*****************************************************************************/
+
+main(int argc, char **argv)
+{
+
+		static char module[] ="main";
+		int exit_code = SUCCESS;
+		char sorted_file_name[999];
+		int ret_value =0;
+
+		memset(sorted_file_name,'\0',sizeof(sorted_file_name));
+
+#ifdef DEBUG
+    MSG_IN
+#endif
+		ret_value= start_up(argc,argv) ;
+
+		if( ret_value == EXIT)
+		{
+	/*			wrt_log(TRUE,SUCCESS,globfo.logline);  */
+				return(EXIT);
+		}
+		else if( ret_value == FAIL) 
+		{
+				sprintf(globfo.logline,"Error while performing initial checks \n");
+				wrt_log(TRUE,SUCCESS,globfo.logline);  
+				wrt_eol();
+				insert_into_prgrm_stts(FAIL);				
+				return(FAIL);
+		}
+
+		/* If there are no files to process then print the summary and exit */
+		
+		if (argc == (NO_OF_ARGUMENTS))
+		{
+					sprintf(globfo.logline,"\n ****No Custodian Files to process. ****");
+					wrt_log(TRUE,SUCCESS,globfo.logline);
+					fprintf(stdout,"%s\n",globfo.logline);
+		
+					file_sum_log();
+				
+					sprintf(globfo.logline,"\n\t*** %s (%s) is Successfully Completed***\n",globfo.operation,PROGRAM);
+					fprintf(stdout,globfo.logline);
+					wrt_log (TRUE,SUCCESS,globfo.logline);
+					wrt_eol();
+					insert_into_prgrm_stts(SUCCESS);	
+					exit (SUCCESS);
+		}	
+
+		init_insert_array();
+		init_update_array();		
+			
+		/* Build hash tables into the memory for validations */	
+
+		if(build_hashtables()!= SUCCESS)
+		{
+				sprintf(globfo.logline,"Error while build hashtables ... \n");
+				fprintf(stdout,globfo.logline);
+				wrt_log (TRUE,SUCCESS,globfo.logline);
+				wrt_eol();
+				exit(FAIL);
+		}
+----------------------------------------------------------------------------------------		
+		/* Added for CR04572 */
+		/* Check for maintenance of COMMODITY LIMIT PERCENTAGE in RFRNCE_CDS_MSTR */
+		sql_stmt=990;
+		EXEC SQL SELECT RFC_HIGH_VLE/100,(1-RFC_HIGH_VLE/100)
+		INTO comLimit,otherLimit
+		FROM RFRNCE_CDS_MSTR
+		WHERE RFC_DMN='COLLAT AMT LIMIT'
+		AND RFC_LOW_VLE='COMMODITY LIMIT PERCENTAGE';
+
+		if(ORA_NOT_FOUND)
+		{
+			sprintf(globfo.logline,"COMMODITY LIMIT PERCENTAGE not maintained in RFRNCE_CDS_MSTR");
+			wrt_log(TRUE,SUCCESS,globfo.logline);
+			insert_into_prgrm_stts(FAIL);
+			exit(FAIL);	
+		}
+
+	   	sprintf(sorted_file_name,"%s/%s",getenv("IFO_GET_SDV"),"sorted_file");
+		
+		if( (file_fp = fopen(sorted_file_name,"r")) == NULL)
+		{
+				fprintf(stdout,"ERROR while opening the sorted file.\n\n");
+				exit(FAIL);	
+		}
+
+		while(!feof(file_fp))
+		{
+				/* Initialise the variables used in the file */
+				init_file_var();
+				exit_code = SUCCESS;	
+				fgets(seq_fname, sizeof(seq_fname), file_fp);
+
+				if(feof(file_fp))
+					break;
+#ifdef DEBUG
+				printf(" File name %d: %s ",tot_files,seq_fname);
+#endif
+				++tot_files;
+
+				/* Set The file processing flag to success */
+
+				strcpy(fil_prcs_flg,"S");
+				init_insert_array();
+				init_update_array();
+				
+				if(get_file_namedet_n_split()!= SUCCESS)
+				{
+						sprintf(globfo.logline,"Error In get file name details..\n");
+						fprintf(stdout,globfo.logline);
+						wrt_log (TRUE,SUCCESS,globfo.logline);
+				/*		++tot_files_rejctd;  */
+						memset(seq_fname+strlen(seq_fname)-1,'\0',1);
+						move_file(FAIL); 
+						exit_code = FAIL;
+				/*		break; */
+				}	
+
+				sprintf(globfo.logline,"\n%ld. Processing File: %s",tot_files,file_name);
+				wrt_log(TRUE,SUCCESS,globfo.logline);
+				/* Validate The File name details */
+				if( vldt_file_namedet() != SUCCESS )
+				{
+#ifdef DEBUG
+					printf("After vldt_file_namedet fails \n");
+#endif
+					/*	++tot_files_rejctd;  */
+						memset(seq_fname+strlen(seq_fname)-1,'\0',1);
+						move_file(FAIL); 
+						exit_code = FAIL;
+					/*	break; */
+				}
+
+				sleep(2);
+				if(strcmp( fil_prcs_flg,"S") == SUCCESS )
+				{
+						VC_INIT(vc_updt_dt_time);
+						sql_stmt=111;
+						EXEC SQL SELECT	
+					  	TO_CHAR(sysdate,'DDMMYYYYHH24MISS') into
+					   	:vc_updt_dt_time from dual;	
+		
+						if(ORA_ERROR)
+						{
+							PROC_ERR;
+							put_mod(module);
+							return(FAIL);
+						}
+						if(build_secdeps_bc_hashtable() != SUCCESS)
+				      		{	
+         						sprintf(globfo.logline,"Error while building SECDEPS_BC hash table \n");
+         						wrt_log(TRUE,SUCCESS,globfo.logline);
+         						return(FAIL);
+                   				}
+
+				      		if(build_secdeps_abc_hashtable() != SUCCESS)
+      						{
+         						sprintf(globfo.logline,"Error while building SECDEPS hash table \n");
+         						wrt_log(TRUE,SUCCESS,globfo.logline);
+         						return(FAIL);
+      						}
+
+				}
+			    			
+				if( strcmp(fil_prcs_flg,"S") == SUCCESS )
+				{
+							VC_INIT(ref_dt_time);
+							
+							EXEC SQL SELECT 
+							TO_CHAR(SYSDATE,'DDMMYYYYHH24MISS') into
+							:ref_dt_time from DUAL;
+	
+							if(ORA_ERROR)
+							{
+								PROC_ERR;
+								put_mod(module);
+								return(FAIL);
+							} 
+
+							if(open_read_split_vldt_file_rec()!= SUCCESS)
+							{
+							/*	++tot_files_rejctd;  */
+								move_file(FAIL); 
+								exit_code = FAIL;
+							/*		break; */
+							}
+				}
+
+#ifdef DEBUG
+				printf(" File processed flag  %s \n",fil_prcs_flg);
+				printf(" Exit Code            %d \n",exit_code);
+#endif
+		
+				if(exit_code == SUCCESS)
+				{
+						if( strcmp(fil_prcs_flg,"S") == SUCCESS )
+						{
+								++tot_files_prcsd;
+								if( ins_into_cltrl_cntrl() != SUCCESS)
+								{
+										fprintf(stdout,"Error in inserting records into CLTRL_CNTRL \n");
+										sprintf(globfo.logline,"Error in inserting records into CLTRL_CNTRL table \n");
+										DB_SAVE(FAIL);		
+										insert_into_prgrm_stts(FAIL);
+										wrt_log(TRUE,SUCCESS,globfo.logline);		
+										wrt_eol();
+									/*	move_file(FAIL); */
+										return(FAIL);
+								}
+								move_file(SUCCESS);
+						}	
+						else
+						{
+								sprintf(globfo.logline,"--------------------------------------------------------------------------------\n");
+								wrt_log(TRUE,SUCCESS,globfo.logline);
+								++tot_files_rejctd;
+								move_file(FAIL); 
+						}
+						
+				}
+				else
+				{
+						sprintf(globfo.logline,"--------------------------------------------------------------------------------\n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						++tot_files_rejctd;
+					/*	move_file(FAIL);  */
+				}
+
+
+		}	 /* End of while loop for reading the sorted_file */
+
+
+		if( exit_code == FAIL)
+		{
+				insert_into_prgrm_stts(exit_code);
+	   			DB_SAVE(FAIL);	 
+				file_sum_log();  
+				wrt_eol();
+				return(FAIL);
+		}
+		else if( exit_code == SUCCESS)
+		{
+				insert_into_prgrm_stts(exit_code);
+				DB_SAVE(SUCCESS);
+				file_sum_log();
+				wrt_eol();
+				return(SUCCESS);
+		}
+				
+			
+		return(SUCCESS);	
+		
+}/* End of Main Program */
+
+/****************************************************************************
+Function				: 	chk_ins_upd
+
+Description				:	Decides whether the particular record from the file is to be inserted or updated.  
+
+Input parameters  			:  	None.
+
+Calling Function			:	
+
+Called Function				:	insert_arr();
+						update_arr();
+
+Return Value				:	SUCCESS/FAIL.
+
+*****************************************************************************/
+int chk_ins_upd()
+{
+		static char module[]= "chk_ins_upd";
+			
+		char hash_secdep_bc_det [17];
+		char hash_secdep_abc_det [17];
+
+		C_INIT(hash_secdep_bc_det);
+		C_INIT(hash_secdep_abc_det);
+		
+#ifdef DEBUG
+		 MSG_IN
+#endif
+
+		if( strcmp(fil_col_type,"BC") == SUCCESS )
+		{
+			strcpy(hash_secdep_bc_det,"F");
+			strcat(hash_secdep_bc_det,vc_sdp_mem_type.arr);
+			strcat(hash_secdep_bc_det,vc_sdp_mem_code.arr);
+			strcat(hash_secdep_bc_det,vc_fil_cstdn_code.arr);
+			strcat(hash_secdep_bc_det,vc_sdp_col_type.arr);
+#ifdef DEBUG
+		printf("File cole type is %s\n",fil_col_type);
+		printf(" String for searching  %s \n",hash_secdep_bc_det); 	
+#endif
+		
+			if( search_hash_table(secdeps_bc_hashtable,hash_secdep_bc_det) == SUCCESS)
+			{
+					update_arr(recs_to_update,"BC"); 
+					++recs_to_update;
+			}
+			else
+			{
+#ifdef DEBUG
+					printf("Records for insert in BC\n");
+#endif
+					insert_arr(recs_to_insert,"BC"); 
+					++recs_to_insert;
+			}
+		}
+		else if( strcmp(fil_col_type,"ABC") == SUCCESS )
+		{
+				strcpy(hash_secdep_abc_det,"F");
+				strcat(hash_secdep_abc_det,vc_sdp_mem_type.arr);
+				strcat(hash_secdep_abc_det,vc_sdp_mem_code.arr);
+				strcat(hash_secdep_abc_det,vc_fil_cstdn_code.arr);
+				strcat(hash_secdep_abc_det,vc_sdp_col_type.arr);
+#ifdef DEBUG
+				printf("File cole type is %s\n",fil_col_type);
+				printf(" String for searching  %s \n",hash_secdep_abc_det); 	
+#endif
+
+				if( search_hash_table(secdeps_abc_hashtable,hash_secdep_abc_det) == SUCCESS)
+				{
+#ifdef DEBUG
+						printf("Records for update in ABC\n");
+#endif
+						update_arr(recs_to_update,"ABC"); 
+						++recs_to_update;
+				}
+				else
+				{
+#ifdef DEBUG
+						printf("Records for insert in ABC\n");
+#endif
+						insert_arr(recs_to_insert,"ABC"); 
+						++recs_to_insert;
+				}
+		}	
+
+#ifdef DEBUG
+		printf("Update values : %d \n",recs_to_update);
+		printf("Insert values: %d \n",recs_to_insert);
+#endif
+		return(SUCCESS);
+		
+} /* End of chk_ins_upd Function */
+
+/****************************************************************************
+Function					: update_arr(int ,char *)
+
+Summary 					: Inserts a record in the array for update into the 
+						  secdeps_bc of secdepc_abc table.
+
+Calling Function				: chk_ins_upd()
+
+Called Function					: NONE.
+
+Input arguments    				: Long , string
+
+Return Value					: SUCCESS/FAIL.
+
+*****************************************************************************/
+update_arr(int i, char *col_type)
+{
+		static char module[]="update_arr";
+		
+#ifdef DEBUG
+		MSG_IN 
+#endif
+
+		if(strcmp(col_type,"BC") == SUCCESS )
+		{
+	
+				VSTRCPY(updt_sdp_seg_id[i],"F");
+      				VARCPY(updt_sdp_mem_type[i],vc_sdp_mem_type);
+   		   		VARCPY(updt_sdp_mem_code[i],vc_sdp_mem_code);
+				VARCPY(updt_sdp_lst_vltn_dt[i],vc_cntrl_vltn_dt);
+      				VARCPY(updt_sdp_cus_code[i],vc_fil_cstdn_code);
+    		  		VARCPY(updt_sdp_gross_val[i],vc_sdp_gross_val);
+  		    		VARCPY(updt_sdp_net_val[i],vc_sdp_net_val);
+				VARCPY(updt_sdp_rcv_dt[i],vc_cntrl_btch_dt);
+/*				VSTRCPY(updt_sdp_type[i],"SEC"); */
+				VARCPY(updt_sdp_type[i],vc_sdp_col_type);
+				VSTRCPY(updt_sdp_bc_ind[i],"NSCCL");
+		}
+		else
+		{
+				VSTRCPY(updt_sdp_seg_id[i],"F");
+				VARCPY(updt_sdp_mem_type[i],vc_sdp_mem_type);
+				VARCPY(updt_sdp_mem_code[i],vc_sdp_mem_code);
+				VARCPY(updt_sdp_lst_vltn_dt[i],vc_cntrl_vltn_dt);
+				VARCPY(updt_sdp_cus_code[i],vc_fil_cstdn_code);
+				VARCPY(updt_sdp_gross_val[i],vc_sdp_gross_val);
+				VARCPY(updt_sdp_net_val[i],vc_sdp_net_val);
+				VARCPY(updt_sdp_rcv_dt[i],vc_cntrl_btch_dt);
+			/*	VSTRCPY(updt_sdp_type[i],"SEC");*/
+				VARCPY(updt_sdp_type[i],vc_sdp_col_type);
+			
+		}	
+	
+#ifdef DEBUG
+		MSG_OUT
+#endif		
+
+} /* End of update_arr() function */
+
+/****************************************************************************
+Function				: insert_arr(int,char*)
+
+Summary 				: Builds an array for insert into the secdeps_bc / secdeps
+					  table
+
+Calling function			: chk_ins_upd()
+
+Called Function				: None
+
+Input arguments				: int, string
+
+Return values				: SUCCESS/FAIL
+
+*****************************************************************************/
+insert_arr(int i,char* col_type)
+{
+      static char module[]= "insert_arr()";
+
+      if(strcmp(col_type,"BC") == SUCCESS )
+      {
+            VSTRCPY(ins_sdp_seg_id[i],"F");
+            VARCPY(ins_sdp_mem_type[i],vc_sdp_mem_type);
+            VARCPY(ins_sdp_mem_code[i],vc_sdp_mem_code);
+	    VARCPY(ins_sdp_rcv_dt[i],btch_dt);
+            VARCPY(ins_sdp_cus_code[i],vc_fil_cstdn_code);
+            VARCPY(ins_sdp_gross_val[i],vc_sdp_gross_val);
+            VARCPY(ins_sdp_net_val[i],vc_sdp_net_val);
+		/*		VSTRCPY(ins_sdp_type[i],"SEC"); */
+       	    VARCPY(ins_sdp_type[i],vc_sdp_col_type);
+            VSTRCPY(ins_sdp_bc_ind[i],"NSCCL");
+            VARCPY(ins_sdp_lst_vltn_dt[i],vc_cntrl_vltn_dt);
+      }
+      else
+      {
+            VSTRCPY(ins_sdp_seg_id[i],"F");
+            VARCPY(ins_sdp_mem_type[i],vc_sdp_mem_type);
+            VARCPY(ins_sdp_mem_code[i],vc_sdp_mem_code);
+	    VARCPY(ins_sdp_rcv_dt[i],btch_dt);
+            VARCPY(ins_sdp_cus_code[i],vc_fil_cstdn_code);
+            VARCPY(ins_sdp_gross_val[i],vc_sdp_gross_val);
+            VARCPY(ins_sdp_net_val[i],vc_sdp_net_val);
+		/*		VSTRCPY(ins_sdp_type[i],"SEC"); */
+            VARCPY(ins_sdp_type[i],vc_sdp_col_type);
+	    VARCPY(ins_sdp_lst_vltn_dt[i],vc_cntrl_vltn_dt);		
+      }
+
+#ifdef DEBUG
+      MSG_IN
+
+		printf("Segment ind   : %s \n",ins_sdp_seg_id[i].arr);
+		printf("member type   : %s \n",ins_sdp_mem_type[i].arr);
+		printf("Member code   : %s \n",ins_sdp_mem_code[i].arr);
+		printf("Batch date    : %s \n",ins_sdp_rcv_dt[i].arr);
+		printf("Custodian code: %s \n",ins_sdp_cus_code[i].arr);
+		printf("SDP TYpe      : %s \n",ins_sdp_type[i].arr);
+		printf("BC Indicator  : %s \n",ins_sdp_bc_ind[i].arr);
+		printf("Gross val     : %s \n",ins_sdp_gross_val[i].arr);
+		printf("Net val       : %s \n",ins_sdp_net_val[i].arr);
+		printf("Valuation date: %s \n",ins_sdp_lst_vltn_dt[i].arr);
+		
+/*		printf("member type   : %s \n",vc_sdp_mem_type.arr);
+		printf("Member code   : %s \n",vc_sdp_mem_code.arr);
+		printf("Batch date    : %s \n",btch_dt.arr);
+		printf("Custodian code: %s \n",vc_fil_cstdn_code.arr);
+		printf("Gross val     : %s \n",vc_sdp_gross_val.arr);
+		printf("Net val       : %s \n",vc_sdp_net_val.arr);
+		printf("Valuation date: %s \n",vc_cntrl_vltn_dt.arr); */
+#endif
+
+#ifdef DEBUG
+      MSG_OUT
+#endif
+			
+
+} /* End of insert_arr() function */
+
+/****************************************************************************
+Function				: sql_load_insert()
+
+Summary 				: Does array inserts of the records.
+
+Calling function			: read_split_vldt_file_rec
+
+Called function				: None
+
+Return value				: SUCCESS/ FAIL
+
+*****************************************************************************/
+int sql_load_insert()
+{
+		static char module[] ="sql_load_insert";
+	
+#ifdef DEBUG
+		MSG_IN
+		printf("Records to insert  %d  \n ",recs_to_insert);
+#endif				
+		int i;		//Added for CR04572
+
+		if( (recs_to_insert != 0) && (strcmp(fil_col_type,"BC") == SUCCESS ) )
+		{
+				sql_stmt = 501;	
+
+#ifdef DEBUG	
+		printf("Records to insert  %d  \n ",recs_to_insert);
+#endif
+
+/*				EXEC SQL FOR :recs_to_insert 
+				INSERT INTO SECDEPS_BC
+								(  SDP_SEG_ID,
+									SDP_MEM_TYPE, 
+									SDP_MEM_CD,  
+									SDP_TYPE,
+									SDP_RCV_DT,
+									SDP_BC_IND, 
+									SDP_GROSS_VAL, 
+									SDP_NET_VAL, 
+									SDP_LST_VAL_DT, 
+									SDP_CUS_CD,
+									SDP_CRTE_DATE,
+									SDP_CRTE_BY
+								)
+				VALUES      (			  :ins_sdp_seg_id,
+								  :ins_sdp_mem_type,
+								  :ins_sdp_mem_code,
+								  :ins_sdp_type,
+								  TO_DATE(:ins_sdp_rcv_dt,BTCH_DT_FMT),	
+								  :ins_sdp_bc_ind,
+								  :ins_sdp_gross_val,		
+								  :ins_sdp_net_val,
+								  TO_DATE(:ins_sdp_lst_vltn_dt,BTCH_DT_FMT),
+								  :ins_sdp_cus_code,
+								  sysdate,
+								  user
+					     );
+
+				if(ORA_ERROR)
+				{
+						sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+				//		PROC_ERR; 
+						EXEC SQL ROLLBACK WORK;
+						put_mod(module);
+						return(FAIL);
+				}
+*/ // Commented for CR04572. Data record needs to be inserted one by one so as to compute ED realtime as per 15% commodity exposure.
+
+                /* Added for CR04572 */
+                for(i=0; i < recs_to_insert ; i++ )
+                {
+                                EXEC SQL
+				INSERT INTO SECDEPS_BC
+                                                                (  SDP_SEG_ID,
+                                                                        SDP_MEM_TYPE,
+                                                                        SDP_MEM_CD,
+                                                                        SDP_TYPE,
+                                                                        SDP_RCV_DT,
+                                                                        SDP_BC_IND,
+                                                                        SDP_GROSS_VAL,
+                                                                        SDP_NET_VAL,
+                                                                        SDP_LST_VAL_DT,
+                                                                        SDP_CUS_CD,
+                                                                        SDP_CRTE_DATE,
+                                                                        SDP_CRTE_BY
+                                                                )
+                                VALUES      (                     :ins_sdp_seg_id[i],
+                                                                  :ins_sdp_mem_type[i],
+                                                                  :ins_sdp_mem_code[i],
+                                                                  :ins_sdp_type[i],
+                                                                  TO_DATE(:ins_sdp_rcv_dt[i],BTCH_DT_FMT),
+                                                                  :ins_sdp_bc_ind[i],
+                                                                  :ins_sdp_gross_val[i],
+                                                                  :ins_sdp_net_val[i],
+                                                                  TO_DATE(:ins_sdp_lst_vltn_dt[i],BTCH_DT_FMT),
+                                                                  :ins_sdp_cus_code[i],
+                                                                  sysdate,
+                                                                  user
+                                             );
+
+                                if(ORA_ERROR)
+                                {
+                                                sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+                                                wrt_log(TRUE,SUCCESS,globfo.logline);
+                                //              PROC_ERR;
+                                                EXEC SQL ROLLBACK WORK;
+                                                put_mod(module);
+                                                return(FAIL);
+                                }
+
+				EXEC SQL COMMIT; 
+				//End of addition for CR04572
+		}
+
+    		}				
+  	else if( (recs_to_insert != 0) && (strcmp(fil_col_type,"ABC") == SUCCESS ) )
+    	{
+
+/*#ifdef DEBUG	*/
+		//printf("Records to insert  %d  \n ",recs_to_insert);// //Commented for CR04275
+/*#endif*/
+            sql_stmt = 601;
+/*            EXEC SQL FOR :recs_to_insert
+            INSERT INTO SECDEPS
+                        (  SDP_SEG_ID,
+                           SDP_MEM_TYPE,
+                           SDP_MEM_CD,
+                           SDP_TYPE,
+                           SDP_RCV_DT,
+                           SDP_GROSS_VAL,
+                           SDP_NET_VAL,
+                           SDP_LST_VAL_DT,
+                           SDP_CUS_CD,
+		           SDP_CRTE_DATE,
+			   SDP_CRTE_BY
+                        )
+            VALUES
+                        ( :ins_sdp_seg_id,
+                          :ins_sdp_mem_type,
+                          :ins_sdp_mem_code,
+                          :ins_sdp_type,
+                          TO_DATE(:ins_sdp_rcv_dt,BTCH_DT_FMT),
+                          :ins_sdp_gross_val,
+                          :ins_sdp_net_val,
+                          TO_DATE(:ins_sdp_lst_vltn_dt,BTCH_DT_FMT),
+                          :ins_sdp_cus_code,
+			  sysdate,
+			  user
+                        );
+
+            if(ORA_ERROR)
+            {
+						sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						EXEC SQL ROLLBACK WORK;
+                 			//	PROC_ERR; 
+						put_mod(module);
+						return(FAIL);
+	    }
+
+*/              // Commented for CR04572. Data record needs to be inserted one by one so as to compute ED realtime as per 15% commodity exposure.
+
+                /* Added for CR04572 */
+                for(i=0; i < recs_to_insert ; i++ )
+                {
+                                EXEC SQL
+				INSERT INTO SECDEPS
+                        	(
+				SDP_SEG_ID,
+                           	SDP_MEM_TYPE,
+                           	SDP_MEM_CD,
+                           	SDP_TYPE,
+                           	SDP_RCV_DT,
+                           	SDP_GROSS_VAL,
+                           	SDP_NET_VAL,
+                           	SDP_LST_VAL_DT,
+                           	SDP_CUS_CD,
+                           	SDP_CRTE_DATE,
+                           	SDP_CRTE_BY
+                        	)
+            			VALUES
+                        	( 	:ins_sdp_seg_id[i],
+                          		:ins_sdp_mem_type[i],
+                          		:ins_sdp_mem_code[i],
+                          		:ins_sdp_type[i],
+                          		TO_DATE(:ins_sdp_rcv_dt[i],BTCH_DT_FMT),
+                          		:ins_sdp_gross_val[i],
+                          		:ins_sdp_net_val[i],
+                          		TO_DATE(:ins_sdp_lst_vltn_dt[i],BTCH_DT_FMT),
+                          		:ins_sdp_cus_code[i],
+                          		sysdate,
+                          		user
+                        	);
+
+            		if(ORA_ERROR)
+            		{		
+                                                sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+                                                wrt_log(TRUE,SUCCESS,globfo.logline);
+                                                EXEC SQL ROLLBACK WORK;
+                                        //      PROC_ERR;
+                                                put_mod(module);
+                                                return(FAIL);
+            		}
+
+			 EXEC SQL COMMIT;
+                }
+                // End of addition for CR04572
+    	} /* End of if condition */
+    
+           /*
+            EXEC SQL FOR :recs_to_insert
+            INSERT INTO SECDEPS_JRNL
+                        (  
+                           JN_OPERATION, 
+                           JN_ORACLE_USER, 
+                           JN_DATE, 
+                           SDJ_SEG_ID,
+                           SDJ_MEM_TYPE,
+                           SDJ_MEM_CD,
+                           SDJ_TYPE,
+                           SDJ_RCV_DT,
+                           SDJ_GROSS_VAL,
+                           SDJ_NET_VAL,
+                           SDJ_LST_VAL_DT,
+                           SDJ_CUS_CD,
+			   SDJ_CRTE_DATE,
+			   SDJ_CRTE_BY,
+                           SDJ_BATCH_DATE, 
+                           SDJ_BATCH_NO
+                        )
+            VALUES
+                        ( 
+                          'UPD',
+                           user,
+                           sysdate,
+                          :ins_sdp_seg_id,
+                          :ins_sdp_mem_type,
+                          :ins_sdp_mem_code,
+                          :ins_sdp_type,
+                          TO_DATE(:ins_sdp_rcv_dt,BTCH_DT_FMT),
+                          :ins_sdp_gross_val,
+                          :ins_sdp_net_val,
+                          TO_DATE(:ins_sdp_lst_vltn_dt,BTCH_DT_FMT),
+                          :ins_sdp_cus_code,
+			   sysdate,
+			   user,
+                          TO_DATE(vc_cntrl_btch_dt,BTCH_DT_FMT),
+                           :vc_fil_btch_no
+                        );
+            
+            if(ORA_ERROR)
+            {
+						sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+
+						sprintf(globfo.logline,"%s		 %s\n",vc_fil_btch_no.arr,vc_cntrl_btch_dt.arr);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						EXEC SQL ROLLBACK WORK;
+                 
+						put_mod(module);
+						return(FAIL);
+	   }       
+        */
+        
+	/*  EXEC SQL COMMIT; */
+
+#ifdef DEBUG
+		MSG_OUT
+#endif
+
+		return(SUCCESS);
+
+}  /* End of sql_load_insert() */
+
+/****************************************************************************
+Function				: sql_load_update()
+
+Summary 				: Does array update of the records.
+
+Calling function			: read_split_vldt_file_rec
+
+Called function				: None
+
+Return value				: SUCCESS/ FAIL
+
+*****************************************************************************/
+
+int sql_load_update()
+{
+		static char module[] ="sql_load_update";
+
+#ifdef DEBUG
+		MSG_IN
+		printf("Records to update  %d  \n ",recs_to_update);
+#endif
+                int i;			//Added for CR04572
+
+		if( (recs_to_update != 0) && (strcmp(fil_col_type,"BC") == SUCCESS ) )
+		{
+#ifdef DEBUG	
+		printf("File Col TYpe  : %s \n",fil_col_type);
+		printf("Records to update  %d  \n ",recs_to_update);
+#endif
+	
+/*		EXEC SQL FOR :recs_to_update
+		UPDATE SECDEPS_BC
+						 SET		SDP_GROSS_VAL = :updt_sdp_gross_val ,
+								SDP_NET_VAL = :updt_sdp_net_val, 
+								SDP_LST_VAL_DT = TO_DATE(:updt_sdp_lst_vltn_dt,BTCH_DT_FMT), 	
+								SDP_RCV_DT = TO_DATE(:updt_sdp_rcv_dt,BTCH_DT_FMT)
+						 WHERE SDP_SEG_ID   = :updt_sdp_seg_id
+						 AND   SDP_MEM_TYPE = :updt_sdp_mem_type
+						 AND   SDP_MEM_CD   = :updt_sdp_mem_code
+						 AND   SDP_BC_IND   = :updt_sdp_bc_ind
+						 AND   UPPER(SDP_CUS_CD) = UPPER(:updt_sdp_cus_code)   
+						 AND   SDP_TYPE     = :updt_sdp_type;
+						 
+				if (ORA_ERROR)
+				{
+					
+						sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						EXEC SQL ROLLBACK WORK;						
+					//	PROC_ERR;  
+						put_mod(module);
+						return(FAIL);
+				}
+				
+                
+		EXEC SQL COMMIT; 
+*/	// Commented for CR04572. Data record needs to be updated one by one so as to compute ED realtime as per 15% commodity exposure.
+
+                for(i=0; i < recs_to_update ; i++ )
+                {
+                /* Added for CR04572 */
+		// Before data upload, SECDEPS_BC is loaded into SECDEPS_BC_JRNL
+
+				sql_stmt = 1701;
+
+	 			EXEC SQL
+                		INSERT INTO SECDEPS_BC_JRNL
+               			(
+                           		JN_OPERATION,
+                           		JN_ORACLE_USER,
+                           		JN_DATE,
+                           		SDJ_SEG_ID,
+                           		SDJ_MEM_TYPE,
+                           		SDJ_MEM_CD,
+                           		SDJ_TYPE,
+                           		SDJ_BC_IND,
+                           		SDJ_RCV_DT,
+                           		SDJ_CRTE_DATE,
+                           		SDJ_CRTE_BY,
+                           		SDJ_GROSS_VAL,
+                           		SDJ_NET_VAL,
+                           		SDJ_LST_VAL_DT,
+                           		SDJ_CUS_CD,
+                           		SDJ_LST_UPDT_DATE,
+                           		SDJ_LST_UPDT_BY,
+                           		SDJ_REM,
+                           		SDJ_BATCH_DATE,
+                           		SDJ_BATCH_NO
+                		)
+                		SELECT 'UPD',
+                        		user,
+                        		sysdate,
+                        		SDP_SEG_ID,
+                        		SDP_MEM_TYPE,
+                        		SDP_MEM_CD,
+                        		SDP_TYPE,
+                        		SDP_BC_IND,
+                        		SDP_RCV_DT,
+                        		SDP_CRTE_DATE,
+                       	 		SDP_CRTE_BY,
+                        		SDP_GROSS_VAL,
+                        		SDP_NET_VAL,
+                        		SDP_LST_VAL_DT,
+                        		SDP_CUS_CD,
+                        		SDP_LST_UPDT_DATE,
+                        		SDP_LST_UPDT_BY,
+                        		SDP_REM,TO_DATE(:vc_cntrl_btch_dt,BTCH_DT_FMT),
+                        		:vc_fil_btch_no
+                		FROM SECDEPS_BC
+                		WHERE 
+					SDP_SEG_ID   = :updt_sdp_seg_id[i]
+                                AND   	SDP_MEM_TYPE = :updt_sdp_mem_type[i]
+                                AND   	SDP_MEM_CD   = :updt_sdp_mem_code[i]
+                                AND   	SDP_BC_IND   = :updt_sdp_bc_ind[i]
+                                AND   	UPPER(SDP_CUS_CD)   = UPPER(:updt_sdp_cus_code[i])
+                                AND   	SDP_TYPE     = :updt_sdp_type[i];
+
+                		if(ORA_ERROR)
+                		{
+                                                sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+                                                wrt_log(TRUE,SUCCESS,globfo.logline);
+                                                EXEC SQL ROLLBACK WORK;
+                                                /* PROC_ERR; */
+                                                put_mod(module);
+                                                return(FAIL);
+                		}
+
+				sql_stmt = 701;
+
+                                EXEC SQL
+                                UPDATE SECDEPS_BC
+                                SET  		 SDP_GROSS_VAL = :updt_sdp_gross_val[i],
+                                                 SDP_NET_VAL = :updt_sdp_net_val[i],
+                                                 SDP_LST_VAL_DT = TO_DATE(:updt_sdp_lst_vltn_dt[i],BTCH_DT_FMT),
+                                                 SDP_RCV_DT = TO_DATE(:updt_sdp_rcv_dt[i],BTCH_DT_FMT)
+                                WHERE SDP_SEG_ID   = :updt_sdp_seg_id[i]
+                                AND   SDP_MEM_TYPE = :updt_sdp_mem_type[i]
+                                AND   SDP_MEM_CD   = :updt_sdp_mem_code[i]
+				AND   SDP_BC_IND   = :updt_sdp_bc_ind[i]
+                                AND   UPPER(SDP_CUS_CD)   = UPPER(:updt_sdp_cus_code[i])
+                                AND   SDP_TYPE     = :updt_sdp_type[i];
+
+                                if (ORA_ERROR)
+                                {
+                                                sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+                                                wrt_log(TRUE,SUCCESS,globfo.logline);
+                                                EXEC SQL ROLLBACK WORK;
+                                                //PROC_ERR; 
+                                                put_mod(module);
+                                                return(FAIL);
+                                }
+
+                                EXEC SQL COMMIT;
+                }                                               
+		// End of addition for CR04572
+		}
+		else if( (recs_to_update != 0) && (strcmp(fil_col_type,"ABC") == SUCCESS))
+		{
+#ifdef DEBUG
+		printf("File col type  : %s \n",recs_to_update);
+      printf("Records to update  %d  \n ",recs_to_update);
+#endif
+			/*	
+                	EXEC SQL 
+                     
+                     INSERT INTO SECDEPS_JRNL
+                      (  
+                           JN_OPERATION, 
+                           JN_ORACLE_USER, 
+                           JN_DATE, 
+                           SDJ_SEG_ID,
+                           SDJ_MEM_TYPE,
+                           SDJ_MEM_CD,
+                           SDJ_TYPE,
+                           SDJ_RCV_DT,
+                           SDJ_CRTE_DATE,
+						   SDJ_CRTE_BY,                           
+                           SDJ_GROSS_VAL,
+                           SDJ_NET_VAL,
+                           SDJ_LST_VAL_DT,
+                           SDJ_CUS_CD,
+                           SDJ_LST_UPDT_DATE, 
+                           SDJ_LST_UPDT_BY, 
+                           SDJ_REM, 
+						   SDJ_BATCH_DATE, 
+                           SDJ_BATCH_NO
+                     )
+
+            SELECT 'UPD',user,sysdate,SDP_SEG_ID, SDP_MEM_TYPE, SDP_MEM_CD, 
+            SDP_TYPE, SDP_RCV_DT, SDP_CRTE_DATE, SDP_CRTE_BY, 
+            SDP_GROSS_VAL, SDP_NET_VAL, SDP_LST_VAL_DT, SDP_CUS_CD, SDP_LST_UPDT_DATE, 
+            SDP_LST_UPDT_BY, SDP_REM,TO_DATE(:vc_cntrl_btch_dt,BTCH_DT_FMT), :vc_fil_btch_no
+            FROM SECDEPS
+            WHERE UPPER(SDP_CUS_CD) = UPPER(:vc_cntrl_cstdn_code)
+            AND SDP_NET_VAL > 0;                                           
+            
+            if(ORA_ERROR)
+            {
+						sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						EXEC SQL ROLLBACK WORK;
+                 
+						put_mod(module);
+						return(FAIL);
+	   }   */
+
+
+/*
+
+		   EXEC SQL FOR :recs_to_update
+                                UPDATE SECDEPS
+                                                 SET  SDP_GROSS_VAL = :updt_sdp_gross_val,
+                                                 SDP_NET_VAL = :updt_sdp_net_val,
+                                                 SDP_LST_VAL_DT = TO_DATE(:updt_sdp_lst_vltn_dt,BTCH_DT_FMT),
+                                                 SDP_RCV_DT = TO_DATE(:updt_sdp_rcv_dt,BTCH_DT_FMT)
+                     WHERE SDP_SEG_ID   = :updt_sdp_seg_id
+                   AND   SDP_MEM_TYPE = :updt_sdp_mem_type
+                   AND   SDP_MEM_CD   = :updt_sdp_mem_code
+                   AND   UPPER(SDP_CUS_CD)   = UPPER(:updt_sdp_cus_code)
+                   AND   SDP_TYPE     = :updt_sdp_type;
+
+
+		    if (ORA_ERROR)
+        	    {
+                                                sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+                                                wrt_log(TRUE,SUCCESS,globfo.logline);
+                                                EXEC SQL ROLLBACK WORK;
+                                                put_mod(module);
+                  				return(FAIL);
+                    }
+                    EXEC SQL COMMIT;
+
+*/ // Commented for CR04572. Data record needs to be updated one by one so as to compute ED realtime as per 15% commodity exposure. 
+
+			for(i=0; i < recs_to_update ; i++ )		
+			{	
+				/* Added for CR04572 */
+				// Before updation data is loaded into SECDEPS_JRNL.
+	              			sql_stmt = 1801;
+		
+		      			EXEC SQL
+                        		INSERT INTO SECDEPS_JRNL
+                      		(
+                           		JN_OPERATION,
+                          	 	JN_ORACLE_USER,
+                           		JN_DATE,
+                           		SDJ_SEG_ID,
+                           		SDJ_MEM_TYPE,
+                           		SDJ_MEM_CD,
+                           		SDJ_TYPE,
+                           		SDJ_RCV_DT,
+                           		SDJ_CRTE_DATE,
+                           		SDJ_CRTE_BY,
+                           		SDJ_GROSS_VAL,
+                           		SDJ_NET_VAL,
+                           		SDJ_LST_VAL_DT,
+                           		SDJ_CUS_CD,
+                          		SDJ_LST_UPDT_DATE,
+                           		SDJ_LST_UPDT_BY,
+                           		SDJ_REM,
+                           		SDJ_BATCH_DATE,
+                           		SDJ_BATCH_NO
+                     		)
+                     		SELECT  'UPD',
+                                	user,
+                                	sysdate,
+                                	SDP_SEG_ID,
+                                	SDP_MEM_TYPE,
+                                	SDP_MEM_CD,
+                                	SDP_TYPE,
+                                	SDP_RCV_DT,
+                                	SDP_CRTE_DATE,
+                                	SDP_CRTE_BY,
+                                	SDP_GROSS_VAL,
+                                	SDP_NET_VAL,
+                                	SDP_LST_VAL_DT,
+                                	SDP_CUS_CD,
+                                	SDP_LST_UPDT_DATE,
+                                	SDP_LST_UPDT_BY,
+                                	SDP_REM,
+                               	 	TO_DATE(:vc_cntrl_btch_dt,BTCH_DT_FMT),
+                                	:vc_fil_btch_no
+                        	FROM SECDEPS
+                        	WHERE SDP_SEG_ID   = :updt_sdp_seg_id[i]
+                                AND   SDP_MEM_TYPE = :updt_sdp_mem_type[i]
+                                AND   SDP_MEM_CD   = :updt_sdp_mem_code[i]
+                                AND   UPPER(SDP_CUS_CD)   = UPPER(:updt_sdp_cus_code[i])
+                                AND   SDP_TYPE     = :updt_sdp_type[i];
+
+                        	if(ORA_ERROR)
+                        	{
+                                                sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+                                                wrt_log(TRUE,SUCCESS,globfo.logline);
+                                                EXEC SQL ROLLBACK WORK;
+                                                /* PROC_ERR; */
+                                                put_mod(module);
+                                                return(FAIL);
+                 		}
+
+				sql_stmt = 801;
+				EXEC SQL					
+				UPDATE SECDEPS
+						 SET  SDP_GROSS_VAL = :updt_sdp_gross_val[i],
+						 SDP_NET_VAL = :updt_sdp_net_val[i],
+						 SDP_LST_VAL_DT = TO_DATE(:updt_sdp_lst_vltn_dt[i],BTCH_DT_FMT),
+						 SDP_RCV_DT = TO_DATE(:updt_sdp_rcv_dt[i],BTCH_DT_FMT)
+                     		WHERE SDP_SEG_ID   = :updt_sdp_seg_id[i]
+                   		AND   SDP_MEM_TYPE = :updt_sdp_mem_type[i]
+                   		AND   SDP_MEM_CD   = :updt_sdp_mem_code[i]
+                   		AND   UPPER(SDP_CUS_CD)   = UPPER(:updt_sdp_cus_code[i])
+                   		AND   SDP_TYPE     = :updt_sdp_type[i];
+
+            			if (ORA_ERROR)
+            			{
+						sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						EXEC SQL ROLLBACK WORK;
+        				        /*PROC_ERR; */
+						put_mod(module);
+                  				return(FAIL);
+            			}
+				
+				EXEC SQL COMMIT;
+			}						
+		// End of addition for CR04572
+		}  /* End of if condition */
+		
+#ifdef DEBUG
+		MSG_OUT
+#endif
+		return(SUCCESS);
+
+} /* End of sql_load_update() */
+
+/****************************************************************************
+Function			: init_file_var()
+
+Description 			: Initialize the variables for the file
+
+Called function			: None
+
+Calling function		: None
+
+Input parameters 		: None
+
+return Values    		: None
+*****************************************************************************/
+
+void init_file_var()
+{
+		static char  module[]="init_file_var";
+	
+#ifdef DEBUG
+	MSG_IN;
+#endif		
+		C_INIT(seq_fname);
+		C_INIT(file_name);
+		C_INIT(fil_cstdn_code);
+		C_INIT(fil_col_type);
+		C_INIT(fil_btch_dt);
+		C_INIT(fil_btch_no);
+		C_INIT(fil_prcs_flg);
+		C_INIT(fil_btch_no_str);
+		
+
+#ifdef DEBUG
+	MSG_OUT;
+#endif
+
+} /* End of init_file_var */
+
+
+/****************************************************************************
+
+Function   				: get_file_namedet_n_split()
+
+
+Description 				: Get the file name details.
+
+Input parameters     			: None
+
+Output parameters			: None
+
+Return Value				: SUCCESS/FAIL
+
+*****************************************************************************/
+int get_file_namedet_n_split()
+{
+		static char module[] ="get_file_namedet_n_split";
+		long  counter = 0;
+		long  charptr = 0;
+		char  filestr [30];
+		char  *fieldg [FILE_NAME_CNT];
+		char  fil_nam_fmt [3];
+	   	char  fil_nam_fmt1   [2];
+	   	char  fil_nam_fmt2   [4];
+   		char  fil_nam_fmt3   [3];
+
+#ifdef DEBUG
+		MSG_IN
+#endif
+		strip_path(file_name, sizeof(file_name), seq_fname);
+
+		C_INIT(filestr);
+		strncpy(filestr,file_name,sizeof(filestr));
+		
+#ifdef DEBUG
+      printf("seq File Name is %s\n",seq_fname);
+      printf("filestr is %s",filestr);
+#endif
+
+		for (counter = 0; counter < FILE_NAME_CNT; counter++ )
+		{
+				fieldg [counter] = &filestr[charptr];
+				while ( (filestr[charptr] != UNDERSCORE) && (filestr[charptr] != FULLSTOP) &&(filestr[charptr] != NEWLINE))
+						charptr++;
+				filestr[charptr] = NULLCHAR;
+				charptr++;
+#ifdef STEP
+				printf("\ncounter:%ld;charptr:%ld;",counter,charptr);
+#endif
+
+		}		
+		
+		strncpy(fil_cstdn_code,fieldg[0],sizeof(fil_cstdn_code));
+		to_upper(fil_cstdn_code,"dummy",1);
+		strncpy(fil_col_type,fieldg[2],sizeof(fil_col_type));
+		to_upper(fil_col_type,"dummy",1);
+		strncpy(fil_btch_dt,fieldg[3],sizeof(fil_btch_dt));
+		strncpy(fil_btch_no_str,fieldg[4],sizeof(fil_btch_no_str));
+
+		strcpy(fil_btch_no, fil_btch_no_str+strlen(fil_btch_no_str) -2);
+
+		VC_INIT(vc_fil_col_type);
+		VSTRCPY(vc_fil_col_type,fil_col_type);
+		VSTRCPY(vc_fil_btch_dt,fil_btch_dt);
+		VSTRCPY(vc_fil_btch_no,fil_btch_no);	
+		
+#ifdef STEP
+
+   	C_INIT(fil_nam_fmt1);
+   	C_INIT(fil_nam_fmt2);
+   	C_INIT(fil_nam_fmt3);
+      	strncpy(fil_nam_fmt1,fieldg[1],sizeof(fil_nam_fmt1));
+     	strncpy(fil_nam_fmt2,fieldg[2],sizeof(fil_nam_fmt2));
+      	strncpy(fil_nam_fmt3,fieldg[3],sizeof(fil_nam_fmt3));
+      	printf("fil_nam_fmt1 is %s;\n",fil_nam_fmt1);
+      	printf("fil_nam_fmt2 is %s;\n",fil_nam_fmt2);
+      	printf("fil_nam_fmt3 is %s;\n",fil_nam_fmt3);
+#endif
+		
+#ifdef STEP
+        printf("\nFile Name is %s;\n",file_name);
+        printf("File CUS Code is %s;\n",fil_cstdn_code);
+        printf("Collatersl type is %s;\n",fil_col_type);
+        printf("Batch date is %s;\n",fil_btch_dt);
+	printf("Batch No Str is %s \n",fil_btch_no_str);
+   	MSG_OUT
+#endif
+			
+	/*	 memset(seq_fname+strlen(seq_fname)-1,'\0',1); */
+	return(SUCCESS);
+
+} /* End of get_file_namedet_n_split */
+
+/****************************************************************************
+
+Function				: vldt_file_namedet()
+
+Description 				: Validates the individual fields of the file name.
+
+input parameters  			: None
+
+Calling Functions 			: main 
+
+Functions called  			: 
+
+*****************************************************************************/
+int vldt_file_namedet()
+{
+		static char module[] ="vldt_file_namedet";
+		
+		int chk_cnt =0;
+		int improper_dt =0;
+		int int_file_btch_no =0;
+		char search_cstdn_code [6];
+		char blank=BLANK;
+
+#ifdef DEBUG
+MSG_IN
+printf("File Cus  Code for search is %s;",fil_cstdn_code);
+#endif
+
+		VC_INIT(vc_fil_idntfr);
+		VSTRCPY(vc_fil_idntfr,FILE_IDNTFR);	
+
+#ifdef DEBUG
+	   printf("The file Batch Number is : %s",fil_btch_no);
+#endif		
+
+		if( strcmp(fil_prcs_flg,"S") == SUCCESS)
+		{
+                        to_upper(fil_col_type,"dummy",1);  
+			if( (strcmp(fil_col_type,"ABC")!= SUCCESS)  && (strcmp(fil_col_type,"BC") != SUCCESS) )
+			{
+					strcpy(fil_prcs_flg,"F");	
+					sprintf(globfo.logline,"Invalid collateral type in the file name \n");
+					wrt_log(TRUE,SUCCESS,globfo.logline);
+					memset(seq_fname+strlen(seq_fname)-1,'\0',1);
+					return(SUCCESS);
+			} 
+		}
+
+		if( strcmp(fil_prcs_flg,"S") == SUCCESS )
+		{	
+			if(vldt_date1((char *)vc_fil_btch_dt.arr,"YYYYMMDD") != SUCCESS)
+			{
+					strcpy(fil_prcs_flg,"F");
+					sprintf(globfo.logline,"The file batch date is not in correct format\n");
+					wrt_log(TRUE,SUCCESS,globfo.logline);
+#ifdef DEBUG
+					printf("\nfile date not in format %s",vc_fil_btch_dt.arr);
+#endif
+					memset(seq_fname+strlen(seq_fname)-1,'\0',1);
+					return(SUCCESS);
+			}
+		}
+
+		/* check for whether the file date is equal to the system current date */	
+
+		if( strcmp(fil_prcs_flg,"S") == SUCCESS)
+		{
+				improper_dt =0;
+				sql_stmt = 120;
+				
+/*				printf("\n the systen current date is  %s		%s",db_fil_btch_dt.arr,vc_fil_btch_dt.arr);*/
+				if(strcmp(vc_fil_btch_dt.arr,db_fil_btch_dt.arr) != SUCCESS)
+				{
+						improper_dt =1;	
+						strcpy(fil_prcs_flg,"F");
+#ifdef DEBUG
+						printf("\nThe file batch date is not equal to system current date\n");
+#endif
+						sprintf(globfo.logline,"\n The file batch date is not equal to current date \n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						memset(seq_fname+strlen(seq_fname)-1,'\0',1);
+						return(SUCCESS);
+				}
+		}
+
+		/* Validate the member code from the file name whether the custodian code exists in the database */
+
+		if(strcmp(fil_prcs_flg,"S") == SUCCESS )
+		{
+				if( strlen(fil_cstdn_code) > CSTDN_CODE_LEN -1) 
+				{
+						strcpy(fil_prcs_flg,"F");
+						sprintf(globfo.logline,"\n Invalid custodian code in the file name\n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						memset(seq_fname+strlen(seq_fname)-1,'\0',1);
+						return(SUCCESS);
+				}
+		}
+
+		if( strcmp(fil_prcs_flg,"S") == SUCCESS )
+		{		
+				VSTRCPY(vc_fil_cstdn_code,fil_cstdn_code);	
+				sql_stmt = 130;
+
+				/*printf("custodian code is   %s",vc_fil_cstdn_code.arr);*/
+				EXEC SQL 
+		   		SELECT 1	
+				into :ret_int 
+				from CLTRL_CSTDN where UPPER(SCU_CD) =UPPER( :vc_fil_cstdn_code);
+
+				if(ORA_ERROR)
+				{
+						PROC_ERR;
+						put_mod(module);
+						return(FAIL);
+				}
+
+				if( ret_int == 0 )
+				{
+						strcpy(fil_prcs_flg,"F");
+						sprintf(globfo.logline,"\n Custodian Code not found in the CLTRL_CSTDN		%s \n", fil_cstdn_code);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						memset(seq_fname+strlen(seq_fname)-1,'\0',1);
+						return(SUCCESS);
+				}
+		}
+
+#ifdef STEP
+				printf("\n The file batch date is   %s",vc_fil_btch_dt.arr);
+#endif
+
+		/* Checking the batch number whether it is already loaded for the day */
+
+		/* Check whether the file batch number is numeric */
+		if(strcmp(fil_prcs_flg,"S") == SUCCESS )
+		{
+
+				if( chk_isnum (fil_btch_no,strlen(fil_btch_no)) != SUCCESS )
+				{
+						sprintf(globfo.logline,"Non Numeric value in the batch number \n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						memset(seq_fname+strlen(seq_fname)-1,'\0',1);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}
+		} 
+
+		if(strcmp(fil_prcs_flg,"S") == SUCCESS )
+		{
+
+				sql_stmt =150;
+				EXEC SQL
+				SELECT nvl(MAX(NVL(CLC_BTCH_NO,0)),0)
+				into :vc_cntrl_btch_no 	
+				FROM CLTRL_CNTRL 
+				WHERE CLC_BTCH_DATE =to_date(:vc_fil_btch_dt,'YYYYMMDD')
+				and UPPER(CLC_FILE_IDNTFR) = UPPER( :vc_fil_idntfr)
+				and UPPER(CLC_CLTRL_CTGRY) = UPPER(:vc_fil_col_type)
+				and UPPER(CLC_CSTDN_CODE) =UPPER( :vc_fil_cstdn_code);
+
+				if(ORA_ERROR)
+				{
+						PROC_ERR;
+						put_mod(module);
+						return(FAIL);
+				}
+
+				int_fil_btch_no = atoi(fil_btch_no);
+
+
+#ifdef DEBUG
+				printf("\n The int  file batch number is   %d",int_fil_btch_no);
+				printf("\n The control batch number is  %d ",vc_cntrl_btch_no);
+#endif
+				if( int_fil_btch_no == vc_cntrl_btch_no)
+				{
+					   strcpy(fil_prcs_flg,"F");	
+						sprintf(globfo.logline,"Invalid batch number.File already loaded for the day \n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);	
+						memset(seq_fname+strlen(seq_fname)-1,'\0',1);
+						return(SUCCESS);
+				}	
+
+				if(strcmp(fil_prcs_flg,"S") == SUCCESS)
+				{
+
+						if( int_fil_btch_no   <  vc_cntrl_btch_no )
+						{
+								strcpy(fil_prcs_flg,"F");	
+								sprintf(globfo.logline,"The file for the batch number is already loaded for the day \n");
+								wrt_log(TRUE,SUCCESS,globfo.logline);
+								memset(seq_fname+strlen(seq_fname)-1,'\0',1);
+								return(SUCCESS);
+						}
+				}
+
+				if(strcmp(fil_prcs_flg,"S") == SUCCESS)
+				{
+
+						if( vc_cntrl_btch_no != (int_fil_btch_no-1 ))
+						{		
+								strcpy(fil_prcs_flg,"F");
+								sprintf(globfo.logline,"The file for the previous batch number has not been loaded \n");
+								wrt_log(TRUE,SUCCESS,globfo.logline);
+								memset(seq_fname+strlen(seq_fname)-1,'\0',1);
+								return(SUCCESS);
+						}
+				}
+		
+				if(strcmp(fil_prcs_flg,"S") == SUCCESS )
+				{
+					sql_stmt = 151;
+					EXEC SQL
+					SELECT nvl(MAX(NVL(CLC_BTCH_NO,0)),0)
+					into :vc_cntrl_det_btch_no 	
+					FROM	CLTRL_CNTRL_DET
+					WHERE CLC_BTCH_DATE =to_date(:vc_fil_btch_dt,'YYYYMMDD')
+					and UPPER(CLC_FILE_IDNTFR) = UPPER(:vc_fil_idntfr)
+					and UPPER(CLC_CLTRL_CTGRY) = 'ABC'
+					and UPPER(CLC_CSTDN_CODE) = UPPER(:vc_fil_cstdn_code);
+
+					if(ORA_ERROR)
+					{
+						PROC_ERR;
+						put_mod(module);
+						return(FAIL);
+					}
+
+					
+					if((int_fil_btch_no - 1 != vc_cntrl_det_btch_no) && (strcmp(vc_fil_col_type.arr,"ABC") == 0))
+					{
+							strcpy(fil_prcs_flg,"F");
+							sprintf(globfo.logline,"The Detail Valuation file for the previous batch number has not been loaded \n");
+							wrt_log(TRUE,SUCCESS,globfo.logline);
+							memset(seq_fname+strlen(seq_fname)-1,'\0',1);
+							return(SUCCESS);
+					
+					}
+				}
+
+
+		} /* End of if condition for fil_prcs_flg */
+					 
+#ifdef DEBUG
+		MSG_OUT
+#endif
+		return(SUCCESS);				
+		
+}  /* End of vldt_file_namedet */
+
+/****************************************************************************
+
+Function				: open_read_split_vldt_file_rec
+
+Summary 				: reads, splits and validates the control record and the detail	record.
+
+Input parameters			: None.
+
+Calling Function			: Main.
+
+Called Function				: read_split_vldt_file_rec()
+
+Return Value				: SUCCESS/FAIL
+
+*****************************************************************************/
+int open_read_split_vldt_file_rec()
+{
+
+		static char module[]="open_read_split_vldt_file_rec";
+		char abs_file_name[PATH_FILE_NAME];
+
+#ifdef DEBUG
+		MSG_IN;
+#endif
+	
+		memset(seq_fname+strlen(seq_fname)-1,'\0',1);	
+		sprintf(abs_file_name,"%s/%s",getenv("IFO_GET_SDV"),seq_fname); /* Added for Linux Migration */	
+		if((seq_fp = fopen(abs_file_name,"r")) == NULL )
+		{
+				sprintf(globfo.logline,"Could not open file %s ",abs_file_name);
+				wrt_log(TRUE,SUCCESS,globfo.logline);
+				strcpy(fil_prcs_flg,"F");
+				return(SUCCESS);
+		}
+			
+		if (strcmp(fil_prcs_flg,"S") == SUCCESS)
+		{
+				if (read_split_vldt_file_rec() != SUCCESS)
+				{
+						fclose(seq_fp);
+						return(FAIL);
+				}
+		}
+
+#ifdef DEBUG
+		MSG_OUT
+#endif
+
+   return(SUCCESS);
+}
+
+/****************************End of read file function *********************/
+
+
+/****************************************************************************
+
+Function					: 	read_split_vldt_file_rec()
+
+Summary 					:	read the control and the data record.
+
+Imput parameterd				:	None
+
+Called Function      				: 	split_cntrl_rec(); 
+							sum_up_valuation_amount();
+
+Return Value					:	SUCCESS/FAIL.
+*****************************************************************************/
+int read_split_vldt_file_rec()
+{
+	
+		static char module[] ="read_split_vldt_file_rec";
+
+		char char_total_recs_read_succ [20];
+		
+		//	Added for CR04572
+
+   		int   i     = 0   ;
+   		int   not_complete   =TRUE ;
+   		long  records_fetched =0   ;
+   		long  total_records  =0 ;
+
+		//End of addition for CR04572		
+
+		init_hash_table(check_dup_hashtable);
+		
+#ifdef DEBUG
+		MSG_IN
+#endif
+		recs_read =0;
+		recs_to_insert =0;
+		recs_to_update =0;
+
+/*		init_insert_array();
+		init_update_array(); */
+
+		if( strcmp(fil_prcs_flg,"S") == SUCCESS )
+		{
+
+				C_INIT(controlrecord);
+				fgets(controlrecord,sizeof(controlrecord),seq_fp);
+		
+				if( feof(seq_fp))
+				{
+						strcpy(fil_prcs_flg,"F");
+						sprintf(globfo.logline,"Incomplete file \n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);	
+#ifdef DEBUG
+						MSG_OUT
+#endif
+  						return(SUCCESS);
+				}
+
+				/* Split the control record   */
+				if ( split_cntrl_rec() != SUCCESS )
+				{
+						return(FAIL);
+				}									
+		}
+
+		if( strcmp(fil_prcs_flg,"S") == SUCCESS )
+		{
+				total_gross_valuation =0.0;
+				total_net_valuation = 0.0;
+				C_INIT(datarecord);
+				// fgets(&datarecord,sizeof(datarecord),seq_fp); 	Commented for CR04572
+				fgets(datarecord,sizeof(datarecord),seq_fp);	
+	
+				while( !feof(seq_fp))
+				{	
+						recs_read++;
+	
+						if(strlen(datarecord) > (sizeof(datarecord) - 2))
+         					{
+         						++tot_recs_rjctd;
+               						sprintf(globfo.logline,"The line size exceeds the limit \n");
+               						wrt_log(TRUE,SUCCESS,globfo.logline);
+							strcpy(fil_prcs_flg,"F");
+               						return(SUCCESS);
+         					}	
+
+						/* Sum up the individual gross and net valuation amounts */
+						if( sum_up_valuation_amount() != SUCCESS)			
+						{
+								sprintf(globfo.logline,"Error while summing up detail record valuation amounts  \n");
+								wrt_log(TRUE,SUCCESS,globfo.logline);
+								return(FAIL);
+						}
+
+						if( strcmp(fil_prcs_flg,"S") == SUCCESS )
+						{
+								C_INIT(datarecord);
+							//	fgets(&datarecord,sizeof(datarecord),seq_fp);    Commented for CR04572
+								fgets(datarecord,sizeof(datarecord),seq_fp);
+						}
+						else
+								return(SUCCESS);
+
+				} /* End of while loop */
+
+		} /* End of if condition for fil_prcs_flg */ 
+
+		if( strcmp(fil_prcs_flg,"S") == SUCCESS )
+		{
+				if( recs_read != atoi(vc_cntrl_no_of_recs.arr) )
+				{
+						sprintf(globfo.logline,"Mismatch in the no. of recs. in the control record and the actual no. of records \n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}
+
+				/* Check whether the control record valuation amounts and the summation of the detail records valuation amounts matches */		
+				if ( ( fabs(control_gross_vltn_amt-total_gross_valuation) >= 0.01) || (fabs(control_net_vltn_amt-total_net_valuation) >= 0.01 ))
+		 		{
+				 		sprintf(globfo.logline,"Mismatch in the control and detail record amounts\n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						sprintf(globfo.logline,"Control Record Gross Value : %.2f\n",control_gross_vltn_amt);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						sprintf(globfo.logline,"Detail Record Gross Value	 : %.2f\n",total_gross_valuation);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						sprintf(globfo.logline,"Control Record Net Valuae  : %.2f\n",control_net_vltn_amt);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						sprintf(globfo.logline,"Detail Record Net Value    : %.2f\n",total_net_valuation);	
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}		
+
+				rewind(seq_fp);
+				recs_to_load = recs_read;
+				recs_read =0;
+
+#ifdef DEBUG
+			printf("Records to load  %d\n",recs_to_load);
+			printf("Control records count %s\n",vc_cntrl_no_of_recs.arr);
+#endif
+				if( recs_to_load != atoi(vc_cntrl_no_of_recs.arr))
+				{
+						sprintf(globfo.logline,"Mismateh in control record count and actual number of recs\n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}
+
+		} /* End of if condition for fil_prcs_flg */
+
+		if( strcmp(fil_prcs_flg,"S") == SUCCESS )
+		{
+		
+				C_INIT(controlrecord);
+      				fgets(controlrecord,sizeof(controlrecord),seq_fp);
+	
+/*				VC_INIT(ref_dt_time);
+				EXEC SQL SELECT 
+							TO_CHAR(SYSDATE,'DDMMYYYYHH24MISS') into
+							:ref_dt_time
+							from DUAL;
+	
+				if(ORA_ERROR)
+				{
+						PROC_ERR;
+						put_mod(module);
+						return(FAIL);
+				} 
+*/
+			
+#ifdef DEBUG
+				printf(" Records to load  %d ",recs_to_load);
+				printf("Reference date time  %s ",ref_dt_time.arr);
+#endif	
+     				total_recs_read = 0; /* intiliaze for new file */
+     				total_recs_read_succ = 0; /* intiliaze for new file */
+
+				tot_recs_rjctd =0;   
+				recs_load=0;
+				record_number =0;
+		
+				C_INIT(datarecord);
+				fgets(datarecord,sizeof(datarecord),seq_fp);
+
+				for(j=0;j<recs_to_load;j++)
+				{
+						++total_recs_read;
+
+#ifdef DEBUG
+						printf("Total recs read : %d \n",total_recs_read);
+						fflush(stdout);
+#endif
+						if(strlen(datarecord) > (sizeof(datarecord) - 2))	
+						{
+								++tot_recs_rjctd;
+								sprintf(globfo.logline,"The line size exceeds the limit at record number %d\n",total_recs_read);
+								wrt_log(TRUE,SUCCESS,globfo.logline);
+								strcpy(fil_prcs_flg,"F");
+								return(SUCCESS);
+						}
+
+						if( split_data_rec_n_vldt_rec() != SUCCESS)
+						{
+								strcpy(fil_prcs_flg,"F");
+								return(SUCCESS);
+						}
+						else
+						{
+								if( strcmp(fil_prcs_flg,"S") == SUCCESS )	
+									record_number++;				
+								else
+								{
+									++tot_recs_rjctd;
+									return(SUCCESS);
+								}
+						}	
+
+						if(chk_ins_upd() != SUCCESS)
+						{
+								sprintf(globfo.logline,"Error while building arrays for insert/update \n");
+								wrt_log(TRUE,SUCCESS,globfo.logline);
+								return(FAIL);	
+						}		
+#ifdef DEBUG
+						printf("Records To insert :%d\n",recs_to_insert);
+						printf("Records To load   :%d\n",recs_to_load);
+						printf("Records To update   :%d\n",recs_to_update);
+						printf("Records number  :%d\n",record_number);
+						printf("MEM ERR         :%d\n",MEM_ARR);
+#endif
+						
+                        			if((recs_to_insert == MEM_ARR) || (recs_to_load == record_number))
+						{
+								if(sql_load_insert() != SUCCESS )
+								{
+										recs_number_from = (total_recs_inserted + total_recs_updated + 1);
+									/*	sprintf(globfo.logline,"\n\t\tFailed while inserting the records between  %d AND %d",recs_number_from ,record_number);
+								 		wrt_log(TRUE,SUCCESS,globfo.logline); */
+								 		return(FAIL);				
+								}	
+								total_recs_inserted = total_recs_inserted +  recs_to_insert;
+								recs_to_insert=0;
+								init_insert_array();
+						}
+				        	
+						if( (recs_to_update == MEM_ARR) || (recs_to_load == record_number))
+						{
+								if( sql_load_update() != SUCCESS )
+								{
+										recs_number_from = (total_recs_inserted + total_recs_updated + 1);	
+									/*	sprintf(globfo.logline,"\nFailed while inserting the records between %d& %d",recs_number_from ,record_number);
+										wrt_log(TRUE,SUCCESS,globfo.logline); */
+										return(FAIL);	
+								}
+								total_recs_updated = total_recs_updated +  recs_to_update;
+								recs_to_update = 0;
+								init_update_array();				
+						}
+						
+						++recs_load;
+						C_INIT(datarecord);
+						fgets(datarecord,sizeof(datarecord),seq_fp);
+				} /* End of for loop */
+				strcpy(fil_prcs_flg,"S");
+		}				/* end of if condition for fil_prcs_flg */
+
+		if( strcmp(fil_prcs_flg,"F") == SUCCESS )
+		{
+				sql_stmt=991;
+				EXEC SQL ROLLBACK WORK;
+				if(ORA_ERROR)
+				{
+						PROC_ERR;
+						put_mod(module);
+						return(FAIL);	
+				}
+		}
+		else
+		{
+				sql_stmt=992;
+				EXEC SQL COMMIT WORK;	
+				if(ORA_ERROR)
+				{
+						PROC_ERR;
+						put_mod(module);
+						return(FAIL);
+				}
+		}
+
+		/* Check for records for members whose records have not been sent by the custodian */ 
+
+		if( strcmp(fil_prcs_flg,"S") == SUCCESS )
+		{
+	 	  	if( strcmp(fil_col_type,"ABC") == SUCCESS)
+		  	{	
+	/*	     	EXEC SQL 
+                     	INSERT INTO SECDEPS_JRNL
+                      (  
+                           JN_OPERATION, 
+                           JN_ORACLE_USER, 
+                           JN_DATE, 
+                           SDJ_SEG_ID,
+                           SDJ_MEM_TYPE,
+                           SDJ_MEM_CD,
+                           SDJ_TYPE,
+                           SDJ_RCV_DT,
+                           SDJ_CRTE_DATE,
+			   SDJ_CRTE_BY,                           
+                           SDJ_GROSS_VAL,
+                           SDJ_NET_VAL,
+                           SDJ_LST_VAL_DT,
+                           SDJ_CUS_CD,
+                           SDJ_LST_UPDT_DATE, 
+                           SDJ_LST_UPDT_BY, 
+                           SDJ_REM, 
+			   SDJ_BATCH_DATE, 
+                           SDJ_BATCH_NO
+                     )
+                     SELECT 	'UPD',
+				user,
+				sysdate,
+				SDP_SEG_ID, 
+				SDP_MEM_TYPE, 
+				SDP_MEM_CD, 
+            			SDP_TYPE, 
+				SDP_RCV_DT, 
+				SDP_CRTE_DATE, 
+				SDP_CRTE_BY, 
+            			SDP_GROSS_VAL, 
+				SDP_NET_VAL, 
+				SDP_LST_VAL_DT, 
+				SDP_CUS_CD, 
+				SDP_LST_UPDT_DATE, 
+            			SDP_LST_UPDT_BY, 
+				SDP_REM,
+				TO_DATE(:vc_cntrl_btch_dt,BTCH_DT_FMT), 
+				:vc_fil_btch_no
+            		FROM SECDEPS
+            		WHERE UPPER(SDP_CUS_CD) = UPPER(:vc_cntrl_cstdn_code)
+            		AND SDP_NET_VAL > 0;                                           
+            
+            		if(ORA_ERROR)
+            		{
+				sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+				wrt_log(TRUE,SUCCESS,globfo.logline);
+				EXEC SQL ROLLBACK WORK;
+               			// PROC_ERR; 
+				put_mod(module);
+				return(FAIL);
+	   		}
+			
+                        sql_stmt = 711;
+
+                        EXEC SQL
+                        SELECT  count(*) into :recs_details_not_sent
+                        from SECDEPS where
+                        SDP_SEG_ID='F'
+                        and UPPER(SDP_CUS_CD) = UPPER(:vc_cntrl_cstdn_code)
+                        and SDP_NET_VAL > 0
+                        and SDP_LST_UPDT_DATE < TO_DATE(:ref_dt_time,'DDMMYYYYHH24MISS');
+ 
+                        if(ORA_ERROR)
+                        {
+                                    PROC_ERR;
+                                    put_mod(module);
+                                    return(FAIL);
+                        }
+
+
+                        if( recs_details_not_sent > 0)
+                        {
+                                     sql_stmt= 712;
+                                     EXEC SQL
+                                     UPDATE SECDEPS
+                                     set SDP_NET_VAL =0,
+                                         SDP_GROSS_VAL =0,
+                                         SDP_LST_VAL_DT=:sys_curr_date,
+                                         SDP_RCV_DT=TO_DATE(:vc_cntrl_btch_dt,BTCH_DT_FMT)
+                                      where SDP_SEG_ID ='F'
+                                      and UPPER(SDP_CUS_CD) = UPPER(:vc_cntrl_cstdn_code)
+                                      and SDP_NET_VAL > 0
+                                      and SDP_LST_UPDT_DATE < TO_DATE(:ref_dt_time,'DDMMYYYYHH24MISS');
+
+                                      if(ORA_ERROR)
+                                      {
+                                      sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+                                      wrt_log(TRUE,SUCCESS,globfo.logline);
+                                      //      PROC_ERR; 
+                                      put_mod(module);
+                                      return(FAIL);
+ 			              }
+                                      
+					EXEC SQL COMMIT;
+                         }
+
+		*/ // Commented for CR04572
+						sql_stmt = 711;
+			
+						EXEC SQL DECLARE SECDEPS_RESET_CUR CURSOR FOR 
+						SELECT  SDP_MEM_CD,SDP_TYPE,SDP_CUS_CD 
+				  		from SECDEPS where 
+				  		SDP_SEG_ID='F'
+				  		and UPPER(SDP_CUS_CD) = UPPER(:vc_cntrl_cstdn_code)
+				  		and SDP_NET_VAL > 0
+				  		and SDP_LST_UPDT_DATE < TO_DATE(:ref_dt_time,'DDMMYYYYHH24MISS');
+						
+						if(ORA_ERROR)
+						{
+								PROC_ERR;
+								put_mod(module);
+								return(FAIL);
+						}
+
+						sql_stmt = 940;
+
+                				EXEC SQL OPEN SECDEPS_RESET_CUR;
+
+                				if (ORA_ERROR)
+            					{		
+                                				PROC_ERR;
+                                				put_mod(module);
+                                				return(FAIL);
+                				}
+
+                				while(not_complete)
+                				{
+							init_update_array();
+
+                                			sql_stmt =950;
+
+                                			EXEC SQL FETCH SECDEPS_RESET_CUR
+                                			into :updt_sdp_mem_code,
+							     :updt_sdp_type,
+							     :updt_sdp_cus_code;
+							
+							if(ORA_ERROR)
+                                			{
+                                        			PROC_ERR;
+                                        			put_mod(module);
+                                        			return(FAIL);
+                                			}
+
+                               				 records_fetched=ORA_TOT_ROWS - total_records;
+                               				 total_records=ORA_TOT_ROWS;
+#ifdef DEBUG
+
+        printf("\n TOT rows for CM :%d, records_fetched:%d , tot_rec:%d",ORA_TOT_ROWS,records_fetched,total_records);
+#endif
+
+			                                if( total_records == 0)
+                        			        {
+#ifdef DEBUG
+   printf("total_records:%ld",total_records);
+#endif
+           		                                     break;
+                        			        }
+
+#ifdef DEBUG
+        printf("Total records not equal to zero");
+#endif
+                                			if (records_fetched < MEM_ARR)
+                            				{		
+#ifdef STEP
+   printf("records_fetched:%ld",records_fetched);
+#endif
+                                               		not_complete = FALSE;
+                               				}
+
+							for(i=0;i<records_fetched;i++)
+							{
+
+		// Added for CR04572 to correct journal data population before data change activity 
+
+							sql_stmt = 2711;
+
+					     		EXEC SQL 
+                    			 		INSERT INTO SECDEPS_JRNL
+                   					(  
+                           				JN_OPERATION, 
+                           				JN_ORACLE_USER, 
+                           				JN_DATE, 
+                           				SDJ_SEG_ID,
+                           				SDJ_MEM_TYPE,
+                           				SDJ_MEM_CD,
+                           				SDJ_TYPE,
+                           				SDJ_RCV_DT,
+                           				SDJ_CRTE_DATE,
+			   				SDJ_CRTE_BY,                           
+                           				SDJ_GROSS_VAL,
+                           				SDJ_NET_VAL,
+                           				SDJ_LST_VAL_DT,
+                           				SDJ_CUS_CD,
+                           				SDJ_LST_UPDT_DATE, 
+                           				SDJ_LST_UPDT_BY, 
+                           				SDJ_REM, 
+			   				SDJ_BATCH_DATE, 
+                           				SDJ_BATCH_NO
+                     					)
+                     					SELECT 	'UPD',
+								user,
+								sysdate,
+								SDP_SEG_ID, 
+								SDP_MEM_TYPE, 
+								SDP_MEM_CD, 
+            							SDP_TYPE, 
+								SDP_RCV_DT, 
+								SDP_CRTE_DATE, 
+								SDP_CRTE_BY, 
+            							SDP_GROSS_VAL, 
+								SDP_NET_VAL, 
+								SDP_LST_VAL_DT, 
+								SDP_CUS_CD, 
+								SDP_LST_UPDT_DATE, 
+            							SDP_LST_UPDT_BY, 
+								SDP_REM,
+								TO_DATE(:vc_cntrl_btch_dt,BTCH_DT_FMT), 
+								:vc_fil_btch_no
+            						FROM SECDEPS
+            						WHERE UPPER(SDP_CUS_CD) = UPPER(:updt_sdp_cus_code[i])
+            						AND UPPER(SDP_MEM_CD) = UPPER(:updt_sdp_mem_code[i])
+							AND SDP_TYPE=:updt_sdp_type[i];                                           
+            						if(ORA_ERROR)
+            						{
+							sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+							wrt_log(TRUE,SUCCESS,globfo.logline);
+							EXEC SQL ROLLBACK WORK;
+                 					// PROC_ERR; 
+							put_mod(module);
+							return(FAIL);
+				   			}			  
+
+							//End of addition for CR04572 
+						
+							sql_stmt= 712;	
+							EXEC SQL 
+							UPDATE SECDEPS
+							set 	SDP_NET_VAL =0,
+								SDP_GROSS_VAL =0,
+						  		SDP_LST_VAL_DT=:sys_curr_date,
+						  		SDP_RCV_DT=TO_DATE(:vc_cntrl_btch_dt,BTCH_DT_FMT)
+							WHERE UPPER(SDP_CUS_CD) = UPPER(:updt_sdp_cus_code[i])
+                                                        AND UPPER(SDP_MEM_CD) = UPPER(:updt_sdp_mem_code[i])
+                                                        AND SDP_TYPE=:updt_sdp_type[i]; 
+
+							if(ORA_ERROR)
+							{
+				               		sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+            				      		wrt_log(TRUE,SUCCESS,globfo.logline);
+							/*	PROC_ERR; */
+							put_mod(module);
+							return(FAIL);
+							}	
+						
+							EXEC SQL COMMIT;
+						
+							}
+						}
+
+				 sql_stmt=912;
+        			 EXEC SQL CLOSE SECDEPS_RESET_CUR;
+			
+				 if(ORA_ERROR)
+                                 {
+                                 sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+                                 wrt_log(TRUE,SUCCESS,globfo.logline);
+                                 /*      PROC_ERR; */
+                                 put_mod(module);
+                                 return(FAIL);
+                                 }
+			}
+			else if(strcmp(fil_col_type,"BC") == SUCCESS)
+			{
+      	
+/*		sql_stmt  = 1000;
+
+		EXEC SQL 
+		INSERT INTO SECDEPS_BC_JRNL
+               (  
+                           JN_OPERATION, 
+                           JN_ORACLE_USER, 
+                           JN_DATE, 
+                           SDJ_SEG_ID,
+                           SDJ_MEM_TYPE,
+                           SDJ_MEM_CD,
+                           SDJ_TYPE,
+                           SDJ_BC_IND,
+                           SDJ_RCV_DT,
+                           SDJ_CRTE_DATE,
+			   SDJ_CRTE_BY,                           
+                           SDJ_GROSS_VAL,
+                           SDJ_NET_VAL,
+                           SDJ_LST_VAL_DT,
+                           SDJ_CUS_CD,
+                           SDJ_LST_UPDT_DATE, 
+                           SDJ_LST_UPDT_BY, 
+                           SDJ_REM, 
+			   SDJ_BATCH_DATE, 
+                           SDJ_BATCH_NO
+                )
+            	SELECT 'UPD',
+			user,
+			sysdate,
+			SDP_SEG_ID, 
+			SDP_MEM_TYPE, 
+			SDP_MEM_CD, 
+            		SDP_TYPE, 
+			SDP_BC_IND, 
+			SDP_RCV_DT, 
+			SDP_CRTE_DATE, 
+			SDP_CRTE_BY, 
+            		SDP_GROSS_VAL, 
+			SDP_NET_VAL, 
+			SDP_LST_VAL_DT, 
+			SDP_CUS_CD, 
+			SDP_LST_UPDT_DATE, 
+            		SDP_LST_UPDT_BY, 
+			SDP_REM,TO_DATE(:vc_cntrl_btch_dt,BTCH_DT_FMT), 
+			:vc_fil_btch_no
+            	FROM SECDEPS_BC
+            	WHERE UPPER(SDP_CUS_CD) = UPPER(:vc_cntrl_cstdn_code)
+            	AND SDP_NET_VAL > 0;
+		 
+            	if(ORA_ERROR)
+            	{
+						sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						EXEC SQL ROLLBACK WORK;
+                 				// PROC_ERR; 
+						put_mod(module);
+						return(FAIL);
+	    	}  
+
+		sql_stmt = 713;
+
+                EXEC SQL
+                SELECT  count(*) into :recs_details_not_sent
+                from SECDEPS_BC where
+                SDP_SEG_ID='F'
+            //  and SDP_TYPE ='SEC' 
+                and UPPER(SDP_CUS_CD) = UPPER(:vc_cntrl_cstdn_code)
+                and SDP_NET_VAL > 0
+                and SDP_LST_UPDT_DATE < TO_DATE(:ref_dt_time,'DDMMYYYYHH24MISS')
+;
+                if(ORA_ERROR)
+                {
+                     sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+                     wrt_log(TRUE,SUCCESS,globfo.logline);
+                 //  PROC_ERR; 
+                     put_mod(module);
+                     return(FAIL);
+                }
+
+                if( recs_details_not_sent > 0)
+                {
+                                sql_stmt= 715;
+                                EXEC SQL
+                                UPDATE SECDEPS_BC
+                                set SDP_NET_VAL=0,SDP_GROSS_VAL=0,
+                                                                SDP_LST_VAL_DT=:sys_curr_date,
+                                                                SDP_RCV_DT=TO_DATE(:vc_cntrl_btch_dt,BTCH_DT_FMT)
+                                                                where SDP_SEG_ID ='F'
+                	//      and SDP_TYPE ='SEC' 
+                                and UPPER(SDP_CUS_CD) = UPPER(:vc_cntrl_cstdn_code)
+                                and SDP_NET_VAL > 0
+                                and SDP_LST_UPDT_DATE < TO_DATE(:ref_dt_time,'DDMMYYYYHH24 MISS');
+
+                                if(ORA_ERROR)
+                	        {
+                                sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+                                wrt_log(TRUE,SUCCESS,globfo.logline);
+                                //  PROC_ERR; 
+                                put_mod(module);
+   return(FAIL);
+                                }
+
+                                EXEC SQL COMMIT;
+                        }
+*/ // Commented for CR04572	
+
+		  sql_stmt = 713;
+
+		  EXEC SQL DECLARE SECDEPS_BC_RESET_CUR CURSOR FOR
+                                                SELECT  SDP_MEM_CD,SDP_TYPE,SDP_CUS_CD
+                                                from SECDEPS where
+                                                SDP_SEG_ID='F'
+                                                and UPPER(SDP_CUS_CD) = UPPER(:vc_cntrl_cstdn_code)
+                                                and SDP_NET_VAL > 0
+                                                and SDP_LST_UPDT_DATE < TO_DATE(:ref_dt_time,'DDMMYYYYHH24MISS');
+
+                                                if(ORA_ERROR)
+                                                {
+                                                                PROC_ERR;
+                                                                put_mod(module);
+                                                                return(FAIL);
+                                                }
+
+                                                sql_stmt = 840;
+
+                                                EXEC SQL OPEN SECDEPS_BC_RESET_CUR;
+
+                                                if (ORA_ERROR)
+                                                {
+                                                                PROC_ERR;
+                                                                put_mod(module);
+                                                                return(FAIL);
+                                                }
+
+                                                while(not_complete)
+                                                {
+                                                        init_update_array();
+
+						 	sql_stmt =250;
+
+                                                        EXEC SQL FETCH SECDEPS_BC_RESET_CUR
+                                                        into :updt_sdp_mem_code,
+                                                             :updt_sdp_type,
+                                                             :updt_sdp_cus_code;
+
+
+                                                        if(ORA_ERROR)
+                                                        {
+                                                                PROC_ERR;
+                                                                put_mod(module);
+                                                                return(FAIL);
+                                                        }
+
+                                                        records_fetched=ORA_TOT_ROWS - total_records;
+                                                        total_records=ORA_TOT_ROWS;
+
+#ifdef DEBUG
+
+        printf("\n TOT rows for CM :%d, records_fetched:%d , tot_rec:%d",ORA_TOT_ROWS,records_fetched,total_records);
+#endif
+
+                                                        if( total_records == 0)
+                                                        {
+#ifdef DEBUG
+   printf("total_records:%ld",total_records);
+#endif
+                                                             break;
+                                                        }
+
+#ifdef DEBUG
+        printf("Total records not equal to zero");
+#endif
+
+                                                        if (records_fetched < MEM_ARR)
+                                                        {
+#ifdef STEP
+   printf("records_fetched:%ld",records_fetched);
+#endif
+                                                        not_complete = FALSE;
+                                                        }
+
+                                                        for(i=0;i<records_fetched;i++)
+                                                        {
+
+                // Added for CR04572 to correct journal data population before data change activity
+
+                                                        sql_stmt = 1711;
+
+                                                        EXEC SQL
+                                                        INSERT INTO SECDEPS_BC_JRNL
+                                                        (
+                                                        JN_OPERATION,
+                                                        JN_ORACLE_USER,
+                                                        JN_DATE,
+                                                        SDJ_SEG_ID,
+                                                        SDJ_MEM_TYPE,
+                                                        SDJ_MEM_CD,
+                                                        SDJ_TYPE,
+                                                        SDJ_RCV_DT,
+                                                        SDJ_CRTE_DATE,
+                                                        SDJ_CRTE_BY,
+                                                        SDJ_GROSS_VAL,
+                                                        SDJ_NET_VAL,
+                                                        SDJ_LST_VAL_DT,
+                                                        SDJ_CUS_CD,
+                                                        SDJ_LST_UPDT_DATE,
+                                                        SDJ_LST_UPDT_BY,
+                                                        SDJ_REM,
+                                                        SDJ_BATCH_DATE,
+                                                        SDJ_BATCH_NO
+                                                        )
+                                                        SELECT  'UPD',
+                                                                user,
+                                                                sysdate,
+                                                                SDP_SEG_ID,
+                                                                SDP_MEM_TYPE,
+                                                                SDP_MEM_CD,
+                                                                SDP_TYPE,
+                                                                SDP_RCV_DT,
+                                                                SDP_CRTE_DATE,
+                                                                SDP_CRTE_BY,
+                                                                SDP_GROSS_VAL,
+                                                                SDP_NET_VAL,
+                                                                SDP_LST_VAL_DT,
+                                                                SDP_CUS_CD,
+                                                                SDP_LST_UPDT_DATE,
+                                                                SDP_LST_UPDT_BY,
+                                                                SDP_REM,
+                                                                TO_DATE(:vc_cntrl_btch_dt,BTCH_DT_FMT),
+                                                                :vc_fil_btch_no
+                                                        FROM SECDEPS_BC
+                                                        WHERE UPPER(SDP_CUS_CD) = UPPER(:updt_sdp_cus_code[i])
+                                                        AND UPPER(SDP_MEM_CD) = UPPER(:updt_sdp_mem_code[i])
+                                                        AND SDP_TYPE=:updt_sdp_type[i];                           
+
+                                                        if(ORA_ERROR)
+                                                        {
+                                                        sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+                                                        wrt_log(TRUE,SUCCESS,globfo.logline);
+                                                        EXEC SQL ROLLBACK WORK;
+                                                        // PROC_ERR;
+                                                        put_mod(module);
+                                                        return(FAIL);
+                                                        }
+
+                                                        //End of addition for CR04572
+
+                                                        sql_stmt= 1712;
+                                                        EXEC SQL
+                                                        UPDATE SECDEPS_BC
+                                                        set     SDP_NET_VAL =0,
+                                                                SDP_GROSS_VAL =0,
+                                                                SDP_LST_VAL_DT=:sys_curr_date,
+                                                                SDP_RCV_DT=TO_DATE(:vc_cntrl_btch_dt,BTCH_DT_FMT)
+                                                        WHERE UPPER(SDP_CUS_CD) = UPPER(:updt_sdp_cus_code[i])
+                                                        AND UPPER(SDP_MEM_CD) = UPPER(:updt_sdp_mem_code[i])
+                                                        AND SDP_TYPE=:updt_sdp_type[i];
+
+                                                        if(ORA_ERROR)
+                                                        {
+                                                        sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+                                                        wrt_log(TRUE,SUCCESS,globfo.logline);
+                                                        /*      PROC_ERR; */
+                                                        put_mod(module);
+                                                        return(FAIL);
+                                                        }
+
+				                        EXEC SQL COMMIT;
+
+                                                        }
+                                                }
+
+				 sql_stmt=112;
+        			 EXEC SQL CLOSE SECDEPS_BC_RESET_CUR;
+			
+				 if(ORA_ERROR)
+                                 {
+                                 sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+                                 wrt_log(TRUE,SUCCESS,globfo.logline);
+                                 /*      PROC_ERR; */
+                                 put_mod(module);
+                                 return(FAIL);
+                                 }
+
+		  	} /* End of if part */
+		} /* End of if part for fil_prcs_flg */ 					 										 
+#ifdef DEBUG
+		 printf("Total records read  %d",total_recs_read);
+		 printf("Total records loaded %d ",recs_load);
+#endif
+
+		/* Print  the file summary for the member */
+
+		if( strcmp(fil_prcs_flg,"S") == SUCCESS )
+		{			
+				if( print_file_summ() != SUCCESS)
+				{
+						fprintf(stdout,"Error in writing into the log file \n");
+						sprintf(globfo.logline,"Error in writing into the log file \n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						return(FAIL);
+				}
+		}	
+				
+return(SUCCESS);
+
+} /* End of read_split_vldt_file_rec functio */
+
+/****************************************************************************
+Function       		: split_cntrl_rec()
+
+Summary 		: Splits the control record 
+
+Input parameters        : None
+
+Return value		:  SUCCESS/FAIL
+
+*****************************************************************************/
+
+int split_cntrl_rec()
+{
+
+		static char module[]= "split_cntrl_rec";
+
+		char ch= BLANK;
+		long counter =0;
+		long charptr =0;
+
+		char *fields [CNTRL_FIELD_CNT];
+		int not_complete= TRUE;
+
+		char buff_cntrl_rec_type [110];
+		char buff_cntrl_cstdn_code [110];
+		char buff_cntrl_rec_btch_dt[110];
+		char buff_cntrl_btch_no[110];
+		char buff_cntrl_vltn_dt[110];
+		char buff_cntrl_gross_vltn_amnt[110];
+		char buff_cntrl_net_vltn_amnt[110];
+		char buff_cntrl_no_of_recs[110];
+
+		char cntrl_rec_type [REC_TYPE_LEN];
+		char cntrl_rec_cstdn_code [CSTDN_CODE_LEN];
+		char cntrl_rec_btch_dt [BTCH_DT_LEN];
+		char cntrl_rec_btch_no [BTCH_NO_LEN];
+		char cntrl_vltn_dt[BTCH_DT_LEN];
+		char cntrl_gross_vltn_amnt[VAL_AMT_LEN];
+		char cntrl_net_vltn_amnt[VAL_AMT_LEN];
+		char cntrl_no_of_recs[NO_OF_RECS_LEN];
+ 
+		VC_INIT(vc_cntrl_btch_dt);
+		VC_INIT(vc_cntrl_cstdn_code);
+		VC_INIT(vc_cntrl_gross_vltn_amt);
+        	VC_INIT(vc_cntrl_net_vltn_amt);
+		VC_INIT(vc_cntrl_no_of_recs);
+
+
+		if( strcmp(fil_prcs_flg,"S") == SUCCESS )
+		{
+				while(not_complete)
+				{
+						fields[counter] = &controlrecord[charptr];
+						while( ( controlrecord [charptr] != COMMA) && (controlrecord[charptr] != NEWLINE ) )
+								charptr++;
+#ifdef DEBUG
+								printf("\ncounter:%ld;charptr:%ld;",counter,charptr);
+#endif
+						if ( controlrecord [charptr] == NEWLINE )
+						{
+								if ( counter != CNTRL_FIELD_CNT -1)
+								{
+										sprintf(globfo.logline,"Control record size mismatch \n ");
+										wrt_log(TRUE,SUCCESS,globfo.logline);
+#ifdef DEBUG
+		printf ("\n Lesser fields in the control record ");
+#endif													   				
+										strcpy(fil_prcs_flg,"F");					
+										return(SUCCESS);
+								}
+								controlrecord[charptr] = NULLCHAR;
+								charptr++;
+								trim_str(' ',fields[counter]);
+								not_complete = FALSE;
+						}
+						controlrecord[charptr] = NULLCHAR;
+						charptr++;
+						trim_str(' ',fields[counter]);
+						
+						if(counter > CNTRL_FIELD_CNT)
+						{
+								not_complete = FALSE;
+								sprintf(globfo.logline,"Control record size mismatch \n");
+								wrt_log(TRUE,SUCCESS,globfo.logline);
+								strcpy(fil_prcs_flg,"F");
+								return(SUCCESS);
+						}
+					
+						counter++;
+				} /* End of while loop */  
+
+		} /* End of if condition for fil_prcs_flg */
+			
+				
+		if( strcmp(fil_prcs_flg,"S") == SUCCESS)
+		{
+				if ( (strlen(fields[0]) > REC_TYPE_LEN -1) || (strlen (fields[1]) > CSTDN_CODE_LEN -1 ) || ( strlen(fields[2]) > BTCH_DT_LEN -1 ) || ( strlen(fields[3]) > BTCH_NO_LEN -1 ) || ( strlen(fields[4]) > BTCH_DT_LEN -1 ) || (strlen(fields[5]) > VAL_AMT_LEN -1 ) || (strlen(fields[6]) > VAL_AMT_LEN -1 ) || (strlen(fields[7]) > NO_OF_RECS_LEN -1 ) )
+				{
+						sprintf(globfo.logline,"Mismatch in control record \n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}						
+
+				if ( strlen(fields[2]) < BTCH_DT_LEN -1 )
+				{
+						sprintf(globfo.logline,"Invalid Batch Date format in the control record \n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}
+
+				if( strlen(fields[4]) < BTCH_DT_LEN -1 )
+				{
+						sprintf(globfo.logline,"Invalid Valuation date format in the control record \n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}
+				
+				/* Copying the fields into the buffer variables and then into the c variables */
+	
+				C_INIT(buff_cntrl_rec_type);
+				strcpy(buff_cntrl_rec_type,fields[0]);
+				trim_str(' ',buff_cntrl_rec_type);
+				C_INIT(cntrl_rec_type);
+				strncpy(cntrl_rec_type,buff_cntrl_rec_type,sizeof(cntrl_rec_type));
+
+				if( atoi(cntrl_rec_type) != 10)
+				{
+						sprintf(globfo.logline,"Invalid record type in the control record \n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}
+
+
+				C_INIT(buff_cntrl_cstdn_code);
+				strcpy(buff_cntrl_cstdn_code,fields[1]);
+				trim_str(' ',buff_cntrl_cstdn_code);
+            
+				C_INIT(cntrl_rec_cstdn_code);
+				strncpy(cntrl_rec_cstdn_code,buff_cntrl_cstdn_code,sizeof(cntrl_rec_cstdn_code));
+				VSTRCPY(vc_cntrl_cstdn_code,cntrl_rec_cstdn_code);
+           
+				C_INIT(buff_cntrl_rec_btch_dt);
+				C_INIT(cntrl_rec_btch_dt);		
+				strcpy(buff_cntrl_rec_btch_dt,fields[2]);
+				trim_str(' ',buff_cntrl_rec_btch_dt);
+				strncpy(cntrl_rec_btch_dt,buff_cntrl_rec_btch_dt,sizeof(cntrl_rec_btch_dt));
+				VSTRCPY(vc_cntrl_btch_dt,cntrl_rec_btch_dt);
+	
+				C_INIT(buff_cntrl_btch_no);
+				C_INIT(cntrl_rec_btch_no);
+				strcpy(buff_cntrl_btch_no,fields[3]);
+				trim_str(' ',buff_cntrl_btch_no);
+				strncpy(cntrl_rec_btch_no,buff_cntrl_btch_no,sizeof(cntrl_rec_btch_no));
+
+				int_cntrl_btch_no = atoi(cntrl_rec_btch_no);
+	
+				C_INIT(buff_cntrl_vltn_dt);
+				C_INIT(cntrl_vltn_dt);
+				strcpy(buff_cntrl_vltn_dt,fields[4]);
+		 		trim_str(' ',buff_cntrl_vltn_dt);
+				strncpy(cntrl_vltn_dt,buff_cntrl_vltn_dt,sizeof(cntrl_vltn_dt));
+				VC_INIT(vc_cntrl_vltn_dt);
+				VSTRCPY(vc_cntrl_vltn_dt,cntrl_vltn_dt);
+
+				C_INIT(buff_cntrl_gross_vltn_amnt);
+				C_INIT(cntrl_gross_vltn_amnt);
+				strcpy(buff_cntrl_gross_vltn_amnt,fields[5]);
+				trim_str(' ',buff_cntrl_gross_vltn_amnt);
+				strncpy(cntrl_gross_vltn_amnt,buff_cntrl_gross_vltn_amnt,sizeof(cntrl_gross_vltn_amnt));
+	
+				C_INIT(buff_cntrl_net_vltn_amnt);
+				C_INIT(cntrl_net_vltn_amnt);
+				strcpy(buff_cntrl_net_vltn_amnt,fields[6]);
+				trim_str(' ',buff_cntrl_net_vltn_amnt);
+				strncpy(cntrl_net_vltn_amnt,buff_cntrl_net_vltn_amnt,sizeof(cntrl_net_vltn_amnt));
+											
+				C_INIT(buff_cntrl_no_of_recs);
+				C_INIT(cntrl_no_of_recs);
+				strcpy(buff_cntrl_no_of_recs,fields[7]);
+				trim_str(' ',buff_cntrl_no_of_recs);
+				strncpy(cntrl_no_of_recs,buff_cntrl_no_of_recs,sizeof(cntrl_no_of_recs));			
+		
+	  		 	VSTRCPY(vc_cntrl_no_of_recs,cntrl_no_of_recs);
+				VSTRCPY(vc_cntrl_gross_vltn_amt,cntrl_gross_vltn_amnt);
+				VSTRCPY(vc_cntrl_net_vltn_amt,cntrl_net_vltn_amnt);
+
+				/* Checking whether the custodian code in the file name and the code in the control record is matching */
+				//printf("\n mismatch	%s			%s",vc_cntrl_cstdn_code.arr,vc_fil_cstdn_code.arr);// //Commented for CR04275
+			        to_upper((char *)vc_cntrl_cstdn_code.arr,tab_cust,0);
+				to_upper((char *)vc_fil_cstdn_code.arr,file_cust,0);
+
+				if( strcmp(tab_cust,file_cust) != SUCCESS )
+				{
+						sprintf(globfo.logline,"Mismatch in the custodian code in control record and the file name \n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}
+
+				/* Check whether the valuation amounts are numerical */
+	
+				if( chk_isnum((char*)vc_cntrl_no_of_recs.arr,vc_cntrl_no_of_recs.len) != SUCCESS)
+				{
+						sprintf(globfo.logline,"Non Numeric value for no of recs in control record\n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}
+
+				/* Check whether the gross valuation amount in the control record is numerical */ 
+		
+				if(chk_isnum((char*)  vc_cntrl_gross_vltn_amt.arr,vc_cntrl_gross_vltn_amt.len) != SUCCESS)
+				{
+						sprintf(globfo.logline,"Non numeric value for the gross valuation amount in the control record\n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}
+
+				/* Check whether the net valuation amount in the control record is numeric */
+		
+				if( chk_isnum((char*)vc_cntrl_net_vltn_amt.arr,vc_cntrl_net_vltn_amt.len) != SUCCESS)
+				{
+						sprintf(globfo.logline,"Non numeric value for net valuation amount in the control record\n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}	
+
+				control_gross_vltn_amt=atof(cntrl_gross_vltn_amnt);
+				control_net_vltn_amt=atof(cntrl_net_vltn_amnt);	 						
+
+				if( control_gross_vltn_amt < control_net_vltn_amt)
+				{
+						sprintf(globfo.logline,"Net valuation amount in control record is greater than the gross valuation amount\n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}
+		
+#ifdef DEBUG
+				printf("\nfield 0 :%s",cntrl_rec_type);
+				printf("\nfield 1 : %s",cntrl_rec_btch_dt);
+				printf("\n field 2: %s",cntrl_rec_btch_no);
+				printf("\n field 3: %s",cntrl_vltn_dt);
+				printf("\n field 4: %s",cntrl_gross_vltn_amnt);
+				printf("\n field 5: %s",cntrl_net_vltn_amnt);
+				printf("\n field 6: %s",cntrl_no_of_recs);
+				printf("\nGross Val cntrl :%f",control_gross_vltn_amt);
+				printf("\nNet Val cntrl  :%f",control_net_vltn_amt);
+#endif								
+
+		/* Check whether the file batch date and the file batch number is the same as the batch date and batch number of the control record */
+				ret_int=0;
+
+#ifdef DEBUG
+				printf("\n Checking file batch date and cntrol rec btch date ");
+#endif
+				sql_stmt = 210;	
+				EXEC SQL SELECT 1
+					into :ret_int 
+					from DUAL 			
+					where to_date(:vc_fil_btch_dt,'YYYYMMDD')= to_date(:vc_cntrl_btch_dt,'DDMMYYYY'); 
+	
+				if(ORA_ERROR)
+				{
+						PROC_ERR;
+						put_mod(module);
+						return(FAIL);
+				}	
+
+#ifdef DEBUG
+				printf("\n Value of ret int  :%d ",ret_int);
+#endif
+				if( ret_int == 0)
+				{
+						sprintf(globfo.logline,"The File Batch date does not match with the control record batch date");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}
+				
+				//printf("batch no  %d		%d" , int_fil_btch_no,int_fil_btch_no);// //Commented for CR04275
+				if( int_fil_btch_no != int_cntrl_btch_no)
+				{
+						sprintf(globfo.logline,"The file batch no. does not match with the control record batch number \n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);		
+				}		
+
+				/* Checks whether the valuation date is in the correct format */
+
+				sql_stmt = 310;
+				if(vldt_date1((char *)vc_cntrl_vltn_dt.arr,"DDMMYYYY") != SUCCESS)
+      				{
+						sprintf(globfo.logline,"Valuation date not in DDMMYYYY format\n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+      				}	
+
+				/* Checks whether the valuation date is less than or equal to the batch date */
+
+				sql_stmt= 330;
+				ret_int=0;
+				EXEC SQL 
+			  		SELECT 1 into 		
+			  		:ret_int 
+			  		from dual 
+			  		where to_date(:vc_cntrl_vltn_dt,'DDMMYYYY') <= to_date(:vc_cntrl_btch_dt,'DDMMYYYY');
+
+				if(ORA_ERROR)
+				{
+						PROC_ERR;
+						put_mod(module);
+						return(FAIL);
+				}
+		
+				if( ret_int == 0)
+				{
+						sprintf(globfo.logline,"Valuation date is greater than the batch date\n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}
+
+		} /* End of fil_prcs_flg check */
+
+		return(SUCCESS);
+
+}		/* End of split_cntrl_rec */		
+
+/****************************************************************************
+Function			: sum_up_valuation_amount()
+
+Description 			: Sums  up the individual valuation amounts.
+
+Calling function 		: read_split_vldt_file_rec
+
+Called function			: None.
+
+Return Value			: SUCCESS/FAIL
+
+Input args 			: None
+****************************************************************************/
+int sum_up_valuation_amount()
+{
+      static char module[]="sum_up_valuation_amounts";
+
+      char ch = BLANK;
+      long counter = 0;
+      long charptr = 0;
+
+      char *fields [DATA_FIELD_CNT];
+
+      int not_complete= TRUE;
+
+      char data_buff_gross_vltn_amt[110];
+      char data_buff_net_vltn_amt[110];
+      char data_gross_vltn_amt [VAL_AMT_LEN];
+      char data_net_vltn_amt [VAL_AMT_LEN];
+      char  hash_cm_clm_code  [50] ;
+      char data_buff_dup[110];
+      char data_dup[100];
+
+			
+#ifdef DEBUG
+		MSG_IN
+#endif
+		counter =0; 
+		
+		VC_INIT(vc_sdp_gross_val);
+      		VC_INIT(vc_sdp_net_val);
+	
+		if( strcmp(fil_prcs_flg,"S") == SUCCESS )
+		{	
+      		while(not_complete)
+      		{
+            		fields[counter] = &datarecord[charptr];
+            		while( (datarecord[charptr] !=COMMA) && (datarecord[charptr] != NEWLINE) )
+				charptr++;
+
+#ifdef DEBUG
+		         fflush(stdout);
+            		 printf("counter:%ld;charptr:%ld;\n",counter,charptr);
+#endif
+            		if( datarecord[charptr] == NEWLINE )
+            		{
+                  		//printf("counter value  %d",counter); //Commented for CR04275
+				
+				if(counter != DATA_FIELD_CNT -1 )
+                  		{
+                        		sprintf(globfo.logline,"Mismatch in detail records at record number %d\n",recs_read);
+					wrt_log(TRUE,SUCCESS,globfo.logline);
+					strcpy(fil_prcs_flg,"F");
+                        		return(SUCCESS);
+                  		}
+
+	                        datarecord[charptr] = NULLCHAR;
+      	    	                charptr++;
+            	                trim_str(' ',fields[counter]);
+                 		not_complete = FALSE;
+           		}
+
+		           datarecord[charptr] = NULLCHAR;
+      		      	   charptr++;
+   		           trim_str(' ',fields[counter]);
+
+		            if(counter > DATA_FIELD_CNT )
+      		      	    {	
+            		    	sprintf(globfo.logline,"Mismatch in the detail records at record number %d\n",recs_read);
+                  		wrt_log(TRUE,SUCCESS,globfo.logline);
+				strcpy(fil_prcs_flg,"F");
+                  		return(SUCCESS);
+            		    }
+
+ 			    counter++;
+	     	}	
+
+      		} /* End of if condition for fil_prcs_flg */
+
+		if( strcmp(fil_prcs_flg,"S") == SUCCESS )
+		{
+if( (strlen(fields[0]) > REC_TYPE_LEN -1 ) || (strlen(fields[1]) > MEM_TYPE_LEN -1) || (strlen(fields[2]) > CLM_LEN -1 ) || (strlen(fields[4]) > VAL_AMT_LEN -1) || (strlen(fields[5]) > VAL_AMT_LEN -1 ) || (strlen(fields[3]) > DEP_TYPE_LEN -1 ))
+      		{
+            		sprintf(globfo.logline,"Mismatch in detail record fields at record number %d\n",recs_read);
+            		wrt_log(TRUE,SUCCESS,globfo.logline);
+			strcpy(fil_prcs_flg,"F");
+			return(SUCCESS);
+      		}
+
+			/* check whether duplicate record exist in the file*/
+			VCA_INIT(main_blck_detail_dup_record,MEM_ARR);
+			C_INIT(data_buff_dup);
+			C_INIT(data_dup);
+			strcpy(data_buff_dup, fields[2]);
+			strcat(data_buff_dup, fields[3]);
+			trim_str(' ',data_buff_dup);
+			strncpy(data_dup,data_buff_dup,sizeof(data_dup));
+			VSTRCPY(vc_sdp_dup_code,data_dup);
+			VARCPY(main_blck_detail_dup_record[recs_read],vc_sdp_dup_code);
+
+			C_INIT(hash_cm_clm_code);
+			NULL_TERM(main_blck_detail_dup_record[recs_read]);
+			CSTRCPY(hash_cm_clm_code,main_blck_detail_dup_record[recs_read]);
+
+			if(search_hash_table(check_dup_hashtable,hash_cm_clm_code) == SUCCESS)
+			{
+				sprintf(globfo.logline,"Duplicate record found at record no. %d\n",recs_read);
+				wrt_log(TRUE,SUCCESS,globfo.logline);
+				strcpy(fil_prcs_flg,"F");
+				return(SUCCESS);
+			}
+			else
+			{
+				insert_hash_table(check_dup_hashtable,hash_cm_clm_code);
+			}
+
+		      /* Copying the fields into the variables */
+
+
+			      	C_INIT(data_buff_gross_vltn_amt);
+      				C_INIT(data_gross_vltn_amt);
+      				strcpy(data_buff_gross_vltn_amt,fields[4]);
+      				trim_str(' ',data_buff_gross_vltn_amt);
+      				strncpy(data_gross_vltn_amt,data_buff_gross_vltn_amt,sizeof(data_gross_vltn_amt));
+
+				VSTRCPY(vc_sdp_gross_val,data_gross_vltn_amt);		
+
+				if( chk_isnum((char*)vc_sdp_gross_val.arr,vc_sdp_gross_val.len) != SUCCESS)
+				{
+						sprintf(globfo.logline,"Invalid gross valuation amount in the data record number %d\n",recs_read);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}
+
+		   		C_INIT(data_buff_net_vltn_amt);
+      				C_INIT(data_net_vltn_amt);
+      				strcpy(data_buff_net_vltn_amt,fields[5]);
+      				trim_str(' ',data_buff_net_vltn_amt);
+      				strncpy(data_net_vltn_amt,data_buff_net_vltn_amt,sizeof(data_net_vltn_amt));
+
+				VSTRCPY(vc_sdp_net_val,data_net_vltn_amt);
+		
+				if( chk_isnum((char*)vc_sdp_net_val.arr,vc_sdp_net_val.len) != SUCCESS)
+				{
+						sprintf(globfo.logline,"Invalid net valuation amount in the data record no. %d\n",recs_read);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}
+
+				individual_gross_valuation =0.0;
+				individual_net_valuation =0.0; 
+
+		      		individual_gross_valuation = atof(data_gross_vltn_amt);
+     			 	individual_net_valuation = atof(data_net_vltn_amt);
+
+				if(individual_gross_valuation < individual_net_valuation)
+				{
+						sprintf(globfo.logline,"Net Valuation Amount greater than Gross Valuation amount in the detail record number %d\n",recs_read);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}		
+
+		      		total_gross_valuation = total_gross_valuation + individual_gross_valuation;
+      				total_net_valuation = total_net_valuation + individual_net_valuation;
+	
+		}		/* End of if condition for fil_prcs_flg */
+
+#ifdef DEBUG
+		MSG_IN
+#endif
+
+		return(SUCCESS);
+} /* End of sum_up_valuation_amounts function */
+
+/****************************************************************************
+Function			: split_data_rec_n_vldt_rec()
+
+Summary 			: Splits the data records.
+				  Checks whether the total gross and net valiation amounts are equal to the sum of the values of the detail records.
+
+input arguments 		: None
+
+Return Value    		: SUCCESS/FAIL
+
+
+****************************************************************************/
+int split_data_rec_n_vldt_rec()
+{
+		static char module[]="split_data_rec_n_vldt_rec";
+		char ch = BLANK;
+		long counter = 0;
+		long charptr = 0;
+	
+		char  hash_cm_clm_code  [7];
+		char  hash_tm_code      [6];	
+		char *fields [DATA_FIELD_CNT];
+		int v_found;
+		int not_complete= TRUE;
+		
+		char data_buff_rec_type[110];
+		char data_buff_mem_type[110];
+		char data_buff_mem_code[110];
+		char data_buff_col_type[110];
+		char data_buff_gross_vltn_amt[110];
+		char data_buff_net_vltn_amt[110];
+
+		char data_rec_type [REC_TYPE_LEN];
+		char data_mem_type [MEM_TYPE_LEN];
+		char data_mem_code [CLM_LEN];
+		char data_col_type [DEP_TYPE_LEN];
+		char data_gross_vltn_amt [VAL_AMT_LEN];
+		char data_net_vltn_amt [VAL_AMT_LEN];
+
+		VC_INIT(vc_sdp_mem_type);
+      		VC_INIT(vc_sdp_mem_code);
+      		VC_INIT(vc_sdp_cus_code );
+      		VC_INIT(vc_sdp_gross_val);
+      		VC_INIT(vc_sdp_net_val);
+      		VC_INIT(vc_sdp_col_type);
+	
+		total_gross_valuation =0.0;
+		total_net_valuation =0.0;	
+	
+#ifdef DEBUG	
+		MSG_IN
+#endif
+
+
+#ifdef DEBUG
+		printf("Value of charptr %f\n",charptr);
+#endif
+
+		if( strcmp(fil_prcs_flg,"S") == SUCCESS )
+		{
+				while(not_complete)
+				{
+						fields[counter] = &datarecord[charptr];
+						while( (datarecord[charptr] !=COMMA) && (datarecord[charptr] != NEWLINE) )
+								charptr++;
+			
+#ifdef DEBUG
+           			fflush(stdout);	
+             			printf("counter:%ld;charptr:%ld;\n",counter,charptr);
+#endif
+						if( datarecord[charptr] == NEWLINE )
+						{
+								if(counter != DATA_FIELD_CNT -1 )
+								{
+										sprintf(globfo.logline,"Detail Record Size Mismatch at record number %d\n",total_recs_read);
+										wrt_log(TRUE,SUCCESS,globfo.logline);
+										strcpy(fil_prcs_flg,"F");
+										return(SUCCESS);
+								}	
+
+								datarecord[charptr] = NULLCHAR;
+								charptr++;
+								trim_str(' ',fields[counter]);
+								not_complete = FALSE;
+			  			}		
+				
+						datarecord[charptr] = NULLCHAR;
+						charptr++;
+						trim_str(' ',fields[counter]);
+				
+						if(counter > DATA_FIELD_CNT )
+						{
+								sprintf(globfo.logline,"Detail Record Size Mismatch at record number %d\n",total_recs_read);
+								wrt_log(TRUE,SUCCESS,globfo.logline);
+								strcpy(fil_prcs_flg,"F");
+								return(SUCCESS);
+						}										
+				
+						counter++;
+
+				} /* End of While loop */	
+
+		} /* End of if condition for fil_prcs_flg */
+
+
+
+		if( strcmp(fil_prcs_flg,"S") == SUCCESS )
+		{
+
+				if( (strlen(fields[0]) > REC_TYPE_LEN -1 ) || (strlen(fields[1]) > MEM_TYPE_LEN -1) || (strlen(fields[2]) > CLM_LEN -1 ) || (strlen(fields[4]) > VAL_AMT_LEN -1) || (strlen(fields[5]) > VAL_AMT_LEN -1 ) || (strlen(fields[3]) > DEP_TYPE_LEN -1))
+				{
+						sprintf(globfo.logline,"Mismatch in the detail record at record number %d\n",total_recs_read);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}
+
+
+				/* Copying the fields into the variables */
+
+				C_INIT(data_buff_rec_type);
+				C_INIT(data_rec_type);
+				strcpy(data_buff_rec_type,fields[0]);
+				trim_str(' ',data_buff_rec_type);
+				strncpy(data_rec_type,data_buff_rec_type,sizeof(data_rec_type));
+		
+				if( atoi(data_rec_type) != 20)
+				{
+						sprintf(globfo.logline,"Invalid record type in the detail record at record number %d\n",total_recs_read);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}
+		
+				C_INIT(data_buff_mem_type);
+				C_INIT(data_mem_type);
+				strcpy(data_buff_mem_type,fields[1]);
+				trim_str(' ',data_buff_mem_type);
+				strncpy(data_mem_type,data_buff_mem_type,sizeof(data_mem_type));
+				VSTRCPY(vc_sdp_mem_type,data_mem_type);
+		
+				C_INIT(data_buff_mem_code);
+				C_INIT(data_mem_code);
+				strcpy(data_buff_mem_code,fields[2]);
+				trim_str(' ',data_buff_mem_code);
+				strncpy(data_mem_code,data_buff_mem_code,sizeof(data_mem_code));
+				VSTRCPY(vc_sdp_mem_code,data_mem_code);
+	
+				C_INIT(data_buff_col_type);
+				C_INIT(data_col_type);
+				strcpy(data_buff_col_type,fields[3]);
+				trim_str(' ',data_buff_col_type);
+				strncpy(data_col_type,data_buff_col_type,sizeof(data_col_type));
+				
+				if (strncmp(data_col_type,"EQ",2) == SUCCESS)
+				{
+					strncpy(data_col_type,"SEC",3);
+				}
+				VSTRCPY(vc_sdp_col_type,data_col_type);
+	
+				C_INIT(data_buff_gross_vltn_amt);
+				C_INIT(data_gross_vltn_amt);
+				strcpy(data_buff_gross_vltn_amt,fields[4]);
+				trim_str(' ',data_buff_gross_vltn_amt);
+				strncpy(data_gross_vltn_amt,data_buff_gross_vltn_amt,sizeof(data_gross_vltn_amt));
+				VSTRCPY(vc_sdp_gross_val,data_gross_vltn_amt);
+																	
+				C_INIT(data_buff_net_vltn_amt);
+				C_INIT(data_net_vltn_amt);
+				strcpy(data_buff_net_vltn_amt,fields[5]);
+				trim_str(' ',data_buff_net_vltn_amt);
+				strncpy(data_net_vltn_amt,data_buff_net_vltn_amt,sizeof(data_net_vltn_amt));
+				VSTRCPY(vc_sdp_net_val,data_net_vltn_amt);
+
+		/*		VSTRCPY(vc_sdp_col_type,"SEC");  */
+	
+				individual_gross_valuation = atof(data_gross_vltn_amt);
+				individual_net_valuation = atof(data_net_vltn_amt);
+
+				total_gross_valuation = total_gross_valuation + individual_gross_valuation;
+				total_net_valuation = total_net_valuation + individual_net_valuation;	
+#ifdef DEBUG
+				fflush(stdout);
+				printf("Rec type  :%s\n",data_rec_type);
+				printf("Mem type  :%s\n",data_mem_type);
+				printf("Mem Code  :%s\n",data_mem_code);
+				printf("Col Type  :%s\n",data_col_type);
+				printf("Gross Vltn:%s\n",data_gross_vltn_amt);
+				printf("Net Vltn  :%s\n",data_net_vltn_amt);
+				MSG_OUT;
+				fflush(stdout);
+#endif			
+
+#ifdef DEBUG
+				printf("Total Gross  : %lf\n",total_gross_valuation);
+				printf("Total Net    : %lf\n",total_net_valuation);
+				printf("Member type  %s :\n",data_mem_type);
+#endif 		
+				EXEC SQL SELECT 1 INTO :v_found
+				FROM
+					RFRNCE_CDS_MSTR
+				WHERE 
+					 RFC_DMN='SEC DEP TYPE'
+				AND 
+					 RFC_LOW_VLE = :data_col_type;
+				
+			/*	if((strcmp(data_col_type,"SEC")==SUCCESS ) ||
+				  (strcmp(data_col_type,"CMF")==SUCCESS ) ||
+				  (strcmp(data_col_type,"NMF")==SUCCESS ) )
+				{
+				}
+				else */
+
+				if(ORA_NOT_FOUND)
+				{
+						sprintf(globfo.logline,"Invalid Collateral type in the file at record number %d\n" ,total_recs_read);
+                                                wrt_log(TRUE,SUCCESS,globfo.logline);
+                                                strcpy(fil_prcs_flg,"F");
+                                                return(SUCCESS);
+				}
+				
+				if(ORA_ERROR)
+  				{
+      					PROC_ERR;
+      					put_mod(module);
+                                        sprintf(globfo.logline,"Error while validating collateral type at record number %d\n",total_recs_read);
+      					wrt_log(FALSE,FALSE,globfo.logline);
+      					fprintf(stdout,"\n Error while validating collateral type at record number %d\n",total_recs_read);
+      					return (SUCCESS);
+   				}
+
+		/* Check whether the member code in the file is present in the relevant masters */	
+	
+				if(strcmp(data_mem_type,"P")== SUCCESS)
+				{
+						C_INIT(hash_cm_clm_code);
+						strcpy(hash_cm_clm_code,data_mem_code);		
+						if(search_hash_table(cm_clm_hashtable,hash_cm_clm_code) != SUCCESS)
+						{
+								sprintf(globfo.logline,"Invalid CM Code in File at record number %d\n",total_recs_read);
+								wrt_log(TRUE,SUCCESS,globfo.logline);
+								strcpy(fil_prcs_flg,"F");
+								return(SUCCESS);	
+						}
+#ifdef DEBUG
+						printf("CM Code found in the hashtable\n");
+#endif
+
+				}
+				else if( strcmp(data_mem_type,"M") == SUCCESS)
+				{
+						C_INIT(hash_tm_code);
+						strcpy(hash_tm_code,data_mem_code);
+#ifdef DEBUG
+						printf("Searching TM Code  %s \n",hash_tm_code);
+#endif
+						if(search_hash_table(tm_hashtable,hash_tm_code) != SUCCESS)
+						{
+								sprintf(globfo.logline,"Invalid TM Code in the File at record number %d\n",total_recs_read);
+								wrt_log(TRUE,SUCCESS,globfo.logline);
+								strcpy(fil_prcs_flg,"F");
+								return(SUCCESS);	
+						}
+#ifdef DEBUG
+						printf("TM Code found in the hashtable\n");
+#endif
+				}
+				else
+				{
+						sprintf(globfo.logline,"Invalid member type in the file at record number %d\n",total_recs_read);
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+				}		
+
+		} /* End of if condition for fil_prcs_flg */
+
+		return(SUCCESS);	
+
+} /* End of split_data_rec_n_vldt_rec */
+
+/**************************************************************************
+
+Function			:		vldt_date1
+
+Description			:		validates the file date field in the file name
+
+Arguments			:		dt  - date value to be vallidated.
+						fmt - format of the input data.
+
+Called Function			: 		None
+
+Return 				: 		SUCCESS/FAIL.
+
+*****************************************************************************/
+int vldt_date1(char *dt,char *fmt)
+{
+		static char module[] = "vldt_date1";
+
+		EXEC SQL BEGIN DECLARE SECTION;
+		varchar  inp_dt      [DSP_DTM_LEN],
+          		inp_fmt     [22];
+		
+		EXEC SQL END DECLARE SECTION;
+		
+		VC_INIT(inp_dt);
+  		VC_INIT(inp_fmt);
+
+  		VSTRCPY(inp_dt, dt);
+  		VSTRCPY(inp_fmt, fmt);
+
+		EXEC SQL SELECT TO_CHAR( TO_DATE(:inp_dt, :inp_fmt), :inp_fmt )
+           INTO   :inp_dt
+           FROM   DUAL;
+
+		if ( ORA_ERROR )
+		{
+#ifdef DEBUG
+  			   PROC_ERR;
+#endif
+				return(FAIL);
+		}
+				
+		NULL_TERM(inp_dt);
+
+#ifdef DEBUG
+				printf("\ndate format is  : %s",inp_dt.arr);
+#endif
+		
+		return(SUCCESS);
+
+}  /* End of vldt_date1 */
+
+/****************************************************************************
+Function 		: Start_up(int argc,char **argv);
+
+summary 		: Initial the variables.
+
+Input parameters 	: argc, argv
+
+Functions Called 	: hide_arguments();	  "IFOSMHED.h"
+			  set_ORA_det();  	  "IFOBLB09.pc"
+		          house_keeping()
+                          get_file_name()         "IFOBLB03.c"
+                     	  conn_to_orac()          "IFOBLB02.pc"
+                     	  wrt_log()               "IFOBLB07.c"
+
+*****************************************************************************/
+
+int start_up (int argc, char ** argv)
+{
+
+		static char module[] ="start_up";
+	
+#ifdef DEBUG
+	MSG_IN;
+#endif
+		/*** Hides the command line arguments (user/password) from display ***/
+		hide_arguments(argc,argv);
+
+		/**** Checks whether the inout arguments are equal to the number of arguments expected *****/
+	   	if( argc < (NO_OF_ARGUMENTS - 1))
+		{
+      	   		fprintf(stdout, "\nIncorrect no. of arguments");
+        		fprintf(stdout, "\nCorrect Usage : %s <usr/pwd> <CM file name(optional)>\n", argv[0]);
+        		fflush(stdin);
+        		return(EXIT);
+     		}
+
+		strcpy(globfo.usr_pwd,argv[1]);
+
+		set_ORA_det();
+
+		house_keeping();
+
+        	EXEC SQL CONNECT :globfo.usr_pwd;
+
+   		if (ORA_ERROR)
+	  	{
+  	   		sprintf(globfo.logline,"\n Connection to ORACLE failed");
+        		fprintf(stdout,globfo.logline);
+			return(EXIT);
+     		}
+
+	   	if (chk_sys_stts()!= SUCCESS)
+	   	{
+   			sprintf(globfo.logline, " Error In System Status Check\n");
+     			fprintf(stdout,globfo.logline); 
+			return(EXIT);
+      		}
+
+
+	   	if (get_file_name(globfo.logfile, LOG_ENV, prefix, "LOG") != SUCCESS)
+     		{
+			fprintf(stdout,"Error in getting the log file name \n");
+        		sprintf(globfo.logline,"Error in getting the log file name \n");
+        		fprintf(stdout,globfo.logline);
+        		wrt_log(TRUE,SUCCESS,globfo.logline);
+        		wrt_eol();
+        		return(EXIT);
+     		}
+
+		VC_INIT(log_file_name);
+		VSTRCPY(log_file_name,globfo.logfile);
+
+		wrt_curr_dt(); 	
+
+		VC_INIT(sys_curr_date);
+
+		EXEC SQL
+		SELECT TO_CHAR(FOP_SYS_CURR_DT,BTCH_DT_FMT),FOP_SYS_CURR_DT
+		INTO :btch_dt,:sys_curr_date
+		FROM FAO_PARAMETERS;
+		
+		if(ORA_ERROR)
+		{
+			PROC_ERR;
+			put_mod(module);
+			return(EXIT);
+		}	
+		
+		/* Check whether the process is already running */
+
+		if(insert_into_prgrm_stts(RUNNING) != SUCCESS)
+		{
+			fprintf(stdout,"Error while checking process status \n");
+			sprintf(globfo.logline,"The process is already running \n"); 
+			return(EXIT);
+		}
+		
+		sprintf(globfo.logline,"\t\t\t\t\t\t\tInput Parameters\n");
+		wrt_log(TRUE,SUCCESS,globfo.logline);
+		sprintf(globfo.logline,"\t\t\t\t\t\t USER                 : %s ",globfo.usr);
+		wrt_log(TRUE,SUCCESS,globfo.logline);
+
+#ifdef DEBUG
+        printf("LOG FILE NAME%s \n",globfo.logfile);
+#endif
+
+		/*** Select system current date into the batch date variable to compare with the file name date ****/
+		
+		sql_stmt = 10;
+		
+		EXEC SQL 
+		SELECT TO_CHAR(FOP_SYS_CURR_DT,FIL_BTCH_DT_FMT)
+		INTO :db_fil_btch_dt
+		FROM FAO_PARAMETERS ;
+
+#ifdef DEBUG
+		printf("The file  batch date from the database  is :%s ",db_fil_btch_dt.arr);
+#endif
+
+		if (ORA_ERROR)
+		{
+			PROC_ERR;
+			put_mod(module);
+			return(FAIL);
+		}
+				
+#ifdef DEBUG
+        printf("File Batch date from table %s \n",db_fil_btch_dt.arr);
+		  printf("Control Rec batch date from table : %s \n",btch_dt.arr);
+#endif
+	
+		return(SUCCESS);	
+
+} /* End of start_up function  */
+
+/****************************************************************************
+
+Function				: 	build_hashtables
+
+Description				: 	Builds the following hash tables
+							cm_hash_table
+							tm_hash_table
+							secdeps_hash_table
+							secdeps_bc_hashtable
+
+Input arguments				:	None
+
+Called Function				:	init_hash_table()
+
+Calling Function			:	main()
+
+Return Value				:	SUCCESS/FAIL   
+
+******************************************************************************/
+
+int build_hashtables()
+{
+		static char module[]="build_hashtables";
+
+#ifdef DEBUG
+MSG_IN
+#endif
+
+//printf("\n%d",SUCCESS); //Commented for CR04275
+		if(build_cm_hash_table() != SUCCESS)
+		{
+	                sprintf(globfo.logline,"Error while building CM hash table\n");
+			wrt_log(TRUE,SUCCESS,globfo.logline);
+			return (FAIL);
+		}
+
+		if(build_tm_hash_table() != SUCCESS)
+		{
+			sprintf(globfo.logline,"Error while building TM hash table \n");
+			wrt_log(TRUE,SUCCESS,globfo.logline);
+			return(FAIL);
+		}
+
+		if(build_secdeps_bc_hashtable() != SUCCESS)
+	{
+			sprintf(globfo.logline,"Error while building SECDEPS_BC hash table \n");
+			 wrt_log(TRUE,SUCCESS,globfo.logline);
+			return(FAIL);
+		}
+
+		if(build_secdeps_abc_hashtable() != SUCCESS)
+		{
+			sprintf(globfo.logline,"Error while building SECDEPS hash table \n");
+			wrt_log(TRUE,SUCCESS,globfo.logline);
+			return(FAIL);
+		}
+
+#ifdef DEBUG
+MSG_OUT
+#endif
+  		 return(SUCCESS);
+
+} /* End of Build Hashtables Function */	
+											
+/****************************************************************************
+
+Function			:  build_cm_hash_table
+
+Description			:  Builds up hashtable for Clearing Members .
+
+Input Args			:  None
+
+Called Function 		:  None
+
+Calling Function		:  build_hashtables
+
+Return Value			:  SUCCESS/FAIL
+****************************************************************************/
+
+int build_cm_hash_table()
+{
+
+	static char module[] ="build_cm_hash_table";
+
+        unsigned hashvalue      ;
+   	int   i     = 0   ;
+   	int   not_complete   =TRUE ;
+   	long  records_fetched =0   ;
+   	long  total_records  =0 ;
+   	char  cm_pry_mbr  [20]  ;
+   	char  hash_cm_clm_code  [7] ;
+		
+		init_hash_table(cm_clm_hashtable);
+		
+#ifdef DEBUG
+MSG_IN
+#endif
+		/* The Clearing member code is taken in the hash table for validating whether the cm code in the file is present in the database */
+		
+		sql_stmt=30;
+	
+		EXEC SQL DECLARE CM_CODE_CUR CURSOR FOR
+					SELECT DISTINCT CLM_CODE
+					FROM CLRNG_MBR_MSTR ,FAO_PARAMETERS
+					WHERE 
+					FOP_SYS_CURR_DT between
+					CLM_PRM_STRT_DATE AND
+					nvl(CLM_PRM_END_DATE,TO_DATE('31-DEC-2399','DD-MON-YYYY'));
+
+		
+		if(ORA_ERROR)
+		{
+				PROC_ERR;
+				put_mod(module);	
+				return(FAIL);
+		}
+
+		sql_stmt = 40;
+
+		EXEC SQL OPEN CM_CODE_CUR;
+			 
+		if (ORA_ERROR)
+		{
+				PROC_ERR;
+				put_mod(module);
+				return(FAIL);
+		}
+
+									
+		while(not_complete)
+		{
+				VCA_INIT(cm_clm_code,MEM_ARR);
+				
+				sql_stmt =2250;
+				
+				EXEC SQL FETCH CM_CODE_CUR 
+				into :cm_clm_code;
+				
+				
+				if(ORA_ERROR)
+				{
+					PROC_ERR;
+					put_mod(module);
+					return(FAIL);
+				}
+			
+				records_fetched=ORA_TOT_ROWS - total_records;
+				total_records=ORA_TOT_ROWS;
+	
+#ifdef DEBUG
+
+        printf("\n TOT rows for CM :%d, records_fetched:%d , tot_rec:%d",ORA_TOT_ROWS,records_fetched,total_records);
+#endif
+				
+				if( total_records == 0)
+				{
+#ifdef DEBUG
+   printf("total_records:%ld",total_records);
+#endif									
+						return(SUCCESS);						
+		
+				}
+
+#ifdef DEBUG
+	printf("Total records not equal to zero");
+#endif
+					
+				if (records_fetched < MEM_ARR)
+				{
+#ifdef STEP
+   printf("records_fetched:%ld",records_fetched);
+#endif
+						not_complete = FALSE;
+				}				
+
+				
+				for(i=0;i<records_fetched;i++)
+				{
+#ifdef STEP
+	printf ("record no : %d",i);
+#endif
+						C_INIT(hash_cm_clm_code);
+						NULL_TERM(cm_clm_code[i]);
+						CSTRCPY(hash_cm_clm_code,cm_clm_code[i]);
+#ifdef STEP
+        printf("\nhash_cm_clm_code:%s;",hash_cm_clm_code);
+#endif
+						insert_hash_table(cm_clm_hashtable,hash_cm_clm_code);
+				} /* End of for loop  */												
+
+
+		}/* End of while loop */	
+
+		sql_stmt =1950;	
+	
+		EXEC SQL CLOSE CM_CODE_CUR;
+		
+		if(ORA_ERROR)
+                {
+                        PROC_ERR;
+                        put_mod(module);
+                        return(FAIL);
+                }
+
+return SUCCESS;
+
+} /* End of build_cm_hash_table */
+
+
+/****************************************************************************
+
+Function  			: build_tm_hash_table()
+
+Description			: Builds tm hash table 
+
+Functions called  		: init_hash_table()
+				  insert_hash_table()
+
+Calling Function		: build_hashtables()
+
+Return Value			: SUCCESS/FAIL
+
+****************************************************************************/
+
+int build_tm_hash_table()
+{
+
+		static char module[]="build_tm_hash_table";
+
+		unsigned hashvalue      ;
+		int   i     = 0   ;
+		int   not_complete   =TRUE ;
+		long  records_fetched =0   ;
+		long  total_records  =0 ;
+		char  hash_tm_code  [6];
+
+		init_hash_table(tm_hashtable);
+
+		sql_stmt = 550;
+
+		EXEC SQL	DECLARE TM_CODE_CUR CURSOR FOR
+					SELECT TRM_CODE FROM
+					TRDNG_MBR_MSTR;
+
+		if (ORA_ERROR)
+		{
+				PROC_ERR;
+				put_mod(module);
+				return(FAIL);
+		}	
+
+		sql_stmt = 51;
+		EXEC SQL OPEN TM_CODE_CUR;
+		
+		if(ORA_ERROR)
+		{
+				PROC_ERR;
+				put_mod(module);
+				return(FAIL);
+		} 
+			 
+		while(not_complete)
+		{
+				VCA_INIT(tm_code,MEM_ARR);
+				sql_stmt =52;
+
+				EXEC SQL  FETCH 	TM_CODE_CUR INTO
+				:tm_code;
+
+				if(ORA_ERROR)
+				{
+					PROC_ERR;
+					put_mod(module);
+					return(FAIL);
+				}							
+		
+				records_fetched = ORA_TOT_ROWS  - total_records;
+				total_records = ORA_TOT_ROWS;
+		
+#ifdef STEP
+		printf("\nTOT Rows : %d,  records_fetched:%d , tot_rec:%d",ORA_TOT_ROWS,records_fetched,total_records);				
+#endif
+
+				if( total_records == 0)
+				{
+#ifdef STEP
+   printf("total_records:%ld",total_records);
+#endif
+						return(SUCCESS);
+				}
+
+
+				if (records_fetched < MEM_ARR)
+				{
+#ifdef STEP
+   printf("records_fetched:%ld",records_fetched);
+#endif
+						not_complete = FALSE;
+				}
+
+
+				for(i=0;i<records_fetched;i++)
+				{
+						C_INIT(hash_tm_code);  
+						NULL_TERM(tm_code[i]);
+						CSTRCPY(hash_tm_code,tm_code[i]);
+#ifdef STEP
+        printf("\nhash_tm_code:%s;",hash_tm_code);
+#endif
+						insert_hash_table(tm_hashtable,hash_tm_code);							
+				} /* End of for loop */
+
+		} /* End of while (not_complete loop) */
+
+                sql_stmt =750;
+
+                EXEC SQL CLOSE TM_CODE_CUR;
+
+                if(ORA_ERROR)
+                {
+                        PROC_ERR;
+                        put_mod(module);
+                        return(FAIL);
+                }
+
+#ifdef DEBUG
+MSG_OUT
+#endif
+
+   return(SUCCESS);
+}
+
+/****************************************************************************
+
+Function				: build_secdeps_bc_hashtable()
+
+Summary					: To build the hash table for secdeps_bc table consisting of
+					  the segment indicator,member type,member code and the 
+					  custodian code.
+
+Functions called  			: init_hash_table();
+					  insert_hash_table(); 
+
+Calling Function			: build_hashtables(); 					
+
+****************************************************************************/
+int build_secdeps_bc_hashtable()
+{
+		static char module[]="build_secdeps_bc_hashtable";
+		
+		unsigned hashvalue      ;
+   		int   i     = 0   ;
+   		int   not_complete   =TRUE ;
+   		long  records_fetched =0   ;
+   		long  total_records  =0 ;
+   		char  hash_sec_det  [17]  ;
+	
+		init_hash_table(secdeps_bc_hashtable);
+
+		sql_stmt =60;
+		
+		EXEC SQL DECLARE SECDEP_BC_CUR CURSOR FOR 
+		SELECT SDP_SEG_ID || SDP_MEM_TYPE || SDP_MEM_CD || SDP_CUS_CD || SDP_TYPE from SECDEPS_BC;
+
+		if(ORA_ERROR)
+		{
+				PROC_ERR;
+				put_mod(module);
+				return(FAIL);
+		}
+	
+		sql_stmt = 61;
+		
+		EXEC SQL OPEN SECDEP_BC_CUR;
+	
+		if(ORA_ERROR)
+		{
+				PROC_ERR;
+				put_mod(module);
+				return(FAIL);
+		}
+
+		
+		while(not_complete)
+		{
+				sql_stmt =62;
+				
+				EXEC SQL FETCH SECDEP_BC_CUR
+							INTO :sdp_bc_det;
+	
+				if(ORA_ERROR)
+				{
+						PROC_ERR;
+						put_mod(module);
+						return(FAIL);
+				}	
+			
+				records_fetched =ORA_TOT_ROWS - total_records;
+				total_records = ORA_TOT_ROWS;
+#ifdef DEBUG
+
+        printf("\n TOT rows:%d, records_fetched:%d , tot_rec:%d",ORA_TOT_ROWS,
+records_fetched,total_records);
+
+#endif
+
+				if( total_records == 0)
+				{
+#ifdef STEP
+   printf("total_records:%ld",total_records);
+#endif
+					return(SUCCESS);
+				}
+
+				if (records_fetched < MEM_ARR)
+				{
+#ifdef STEP
+   printf("records_fetched:%ld",records_fetched);
+#endif
+
+					not_complete = FALSE;
+				}	
+
+		
+				for(i=0;i<records_fetched;i++)
+				{
+						C_INIT(hash_sec_det);
+						NULL_TERM(sdp_bc_det[i]);
+						CSTRCPY(hash_sec_det,sdp_bc_det[i]);
+#ifdef STEP
+        printf("\nhash_sec_det:%s;",hash_sec_det);
+#endif
+						insert_hash_table(secdeps_bc_hashtable,hash_sec_det);
+				}  /* End of for loop */
+				
+		} /* End of while (not_complete) loop  */		
+
+                sql_stmt =1150;
+
+                EXEC SQL CLOSE SECDEP_BC_CUR;
+
+                if(ORA_ERROR)
+                {
+                        PROC_ERR;
+                        put_mod(module);
+                        return(FAIL);
+                }
+
+return SUCCESS;
+} /* End of build_secdeps_bc_hashtable */
+
+/****************************************************************************
+
+Function			: build_secdeps_abc_hashtable()
+
+Description    			: Builds the hashtable for abc security deposits
+
+Function			: init_hash_table();
+				  insert_hash_table();
+
+Calling Function 		:  build_hashtable();
+
+Return Value     		:  SUCCESS/ FAIL 
+****************************************************************************/
+
+int build_secdeps_abc_hashtable()
+{
+		static char module[] ="build_secdeps_abc_hashtable";
+
+		unsigned hashvalue      ;
+		int   i     = 0   ;
+		int   not_complete   =TRUE ;
+		long  records_fetched =0   ;
+		long  total_records  =0 ;
+		char  hash_secdep_abc_det [17] ;		
+
+		init_hash_table(secdeps_abc_hashtable);
+
+#ifdef DEBUG
+		MSG_IN
+#endif
+
+		sql_stmt =70;
+
+		EXEC SQL DECLARE SECDEP_CUR CURSOR FOR
+			      SELECT SDP_SEG_ID || SDP_MEM_TYPE || SDP_MEM_CD || SDP_CUS_CD || SDP_TYPE from SECDEPS;
+
+      if(ORA_ERROR)
+      {
+            PROC_ERR;
+            put_mod(module);
+            return(FAIL);
+      }
+
+		sql_stmt =71;
+							
+      EXEC SQL OPEN SECDEP_CUR;
+
+      if(ORA_ERROR)
+      {
+            PROC_ERR;
+            put_mod(module);
+            return(FAIL);
+      }
+
+
+      while(not_complete)
+      {
+            sql_stmt =72;
+
+            EXEC SQL FETCH SECDEP_CUR
+                     INTO :sdp_abc_det;
+
+            if(ORA_ERROR)
+            {
+                  PROC_ERR;
+                  put_mod(module);
+                  return(FAIL);
+            }
+
+            records_fetched =ORA_TOT_ROWS - total_records;
+            total_records = ORA_TOT_ROWS;
+#ifdef DEBUG
+        printf("\n TOT rows:%d, records_fetched:%d , tot_rec:%d",ORA_TOT_ROWS,
+records_fetched,total_records);
+#endif
+
+            if( total_records == 0)
+            {
+#ifdef STEP
+   printf("total_records:%ld",total_records);
+#endif
+               return(SUCCESS);
+            }
+
+            if (records_fetched < MEM_ARR)
+            {
+#ifdef STEP
+   printf("records_fetched:%ld",records_fetched);
+#endif
+
+               not_complete = FALSE;
+            }
+
+
+            for(i=0;i<records_fetched;i++)
+            {
+                  C_INIT(hash_secdep_abc_det);
+                  NULL_TERM(sdp_abc_det[i]);
+                  CSTRCPY(hash_secdep_abc_det,sdp_abc_det[i]);
+#ifdef STEP
+        printf("\nhash_secdep_abc_det:%s;",hash_secdep_abc_det);
+#endif
+                  insert_hash_table(secdeps_abc_hashtable,hash_secdep_abc_det);
+            }  /* End of for loop */
+
+      } /* End of while (not_complete) loop  */
+
+      sql_stmt =50;
+
+      EXEC SQL CLOSE SECDEP_CUR;
+
+      if(ORA_ERROR)
+      {
+             PROC_ERR;
+             put_mod(module);
+             return(FAIL);
+      }
+
+return SUCCESS;
+
+} /* End of build_secdeps_abc_hashtable function */
+
+/****************************************************************************
+
+	Function		: house_keeping
+
+	Summary 		: Sets the variables in the globfo structure.
+
+	Functions called 	: getdtm()
+			          getusr()
+			          getdtm1()
+
+****************************************************************************/
+void house_keeping()
+{
+		static char module[] ="house_keeping";
+
+#ifdef DEBUG
+    MSG_IN;
+#endif
+	
+		strcpy(globfo.dt, getdtm());
+		strcpy(globfo.usr, getusr(globfo.usr_pwd));
+		strcpy(globfo.operation,"Update BC/ABC Security Deposits Valuation ");
+		strcpy(globfo.area_pref, LOG_PREFIX);
+		sprintf(prefix, "%s_%s", globfo.area_pref,getdtm1() ); 
+
+#ifdef DEBUG
+    MSG_OUT;
+#endif
+
+} /* End of housekeeping function */
+
+/***************************************************************************
+Function					: init_insert_array();
+
+Summary 					: Initializes the array for inserts.
+
+Calling	Function  				: main
+
+Called function	   				:  
+
+Return value         				: None. 
+
+****************************************************************************/
+void init_insert_array()
+{
+
+
+#ifdef DEBUG
+		  printf("In init_insert_array() function\n");
+#endif
+
+		  VCA_INIT(ins_sdp_seg_id,MEM_ARR);
+		  VCA_INIT(ins_sdp_mem_type,MEM_ARR);
+		  VCA_INIT(ins_sdp_mem_code,MEM_ARR);
+		  VCA_INIT(ins_sdp_rcv_dt,MEM_ARR);
+		  VCA_INIT(ins_sdp_lst_vltn_dt,MEM_ARR);
+		  VCA_INIT(ins_sdp_cus_code,MEM_ARR);
+		  VCA_INIT(ins_sdp_gross_val,MEM_ARR);
+		  VCA_INIT(ins_sdp_net_val,MEM_ARR);
+		  VCA_INIT(ins_sdp_type,MEM_ARR);
+		  VCA_INIT(ins_sdp_bc_ind,MEM_ARR);
+
+			
+
+#ifdef DEBUG
+  		  printf("Out init_insert_array Function \n");
+#endif
+
+
+} /* End of init_insert_array() */
+
+/***************************************************************************
+
+Function                                        : init_update_array();
+
+Summary                                         : Initializes the array for update.
+
+Calling Function                                : main
+
+Called function                                 :
+
+Return value                                    : None.
+
+****************************************************************************/
+void init_update_array()
+{
+
+#ifdef DEBUG
+		printf("Inside init_update_array\n");
+#endif
+
+	VCA_INIT(updt_sdp_seg_id,MEM_ARR);
+        VCA_INIT(updt_sdp_mem_type,MEM_ARR);
+        VCA_INIT(updt_sdp_mem_code,MEM_ARR);
+	VCA_INIT(updt_sdp_lst_vltn_dt,MEM_ARR);	
+        VCA_INIT(updt_sdp_cus_code,MEM_ARR);
+        VCA_INIT(updt_sdp_gross_val,MEM_ARR);
+        VCA_INIT(updt_sdp_net_val,MEM_ARR);
+        VCA_INIT(updt_sdp_type,MEM_ARR);
+	VCA_INIT(updt_sdp_bc_ind,MEM_ARR);	
+	VCA_INIT(updt_sdp_rcv_dt,MEM_ARR);
+
+#ifdef DEBUG
+		printf("Exiting init_update_array \n");
+#endif
+
+
+} /* End of init_update_array() */
+
+/***************************************************************************
+	
+		Function				:  chk_sys_stts()
+
+		Summary 				:  Checks the system status.
+
+		Called Functions  			:  wrt_curr_dt()
+						           get_parm()
+
+		Return Value				:  SUCCESS / FAIL
+
+****************************************************************************/
+
+int chk_sys_stts(void)
+{
+	
+		static char module[]="chk_sys_stts()";
+		
+#ifdef DEBUG
+	MSG_IN;
+#endif		
+		/* Get The System Parameters */
+
+		if (get_parm(globfo.curr_dt, globfo.nxt_dt, globfo.lst_dt, globfo.status) != SUCCESS)
+		{
+				sprintf(globfo.logline,"\n get_parm funtion failed");
+				fprintf(stdout,globfo.logline);
+/*				wrt_log(TRUE,SUCCESS,globfo.logline); */
+				return (FAIL);
+		}		
+
+		VC_INIT(curr_dt);
+		VSTRCPY(curr_dt,globfo.curr_dt);	
+		
+#ifdef DEBUG
+	printf ("Curr dt  %s \n",curr_dt.arr);
+#endif
+
+/*		wrt_curr_dt();               Write the current working date */
+
+		/* Check system status */
+		if (globfo.status[0] != 'O')
+		{
+		/*		wrt_log(FALSE, E_INV_STAT, getmsg(E_INV_STAT)); */
+				fprintf(stdout, "%s\n", getmsg(E_INV_STAT));
+				return (FAIL);
+		}
+
+#ifdef DEBUG
+	MSG_OUT;
+#endif	
+
+		return(SUCCESS);
+
+}  /* End of chk_sys_stts Function */
+
+/****************************************************************************
+	Function				: put_mod()
+
+	Summary 				: Puts the module name and sql statement no.
+
+	Input parameters  			: None
+
+	Output parameters 			: None.
+
+*****************************************************************************/
+
+void put_mod(char *mod)
+{
+		static char module[] ="put_mod";
+		
+		char    outline[REC_LEN];	 
+	
+#ifdef DEBUG
+     MSG_IN;
+#endif
+	
+		sprintf(outline, "Error In Function <%s> At SQL Stmt <%d>", mod, sql_stmt);
+
+/*		fputs(outline, stdout); */
+
+		wrt_log(FALSE, FALSE, outline);
+					
+#ifdef DEBUG
+     MSG_OUT;
+#endif
+		
+}
+
+/***************************************************************************
+
+Function 			:		getdtm1()
+
+Description			:		Gets The system date and time
+
+Input Parameters		:		None
+
+Called Function			:		None
+
+Calling Funcation		:		house_keeping()
+
+Return Value 			:		DateTime in DDMMYYYYHHMISS format  
+****************************************************************************/
+
+char *getdtm1()
+{
+		static char module[]="getdtm1";
+
+		/* Get system date and time DDMMYYYYHHMISS */
+		static char d [15];
+		long        lt;
+
+#ifdef DEBUG
+    MSG_IN;
+#endif
+		
+		 if ( (lt = time(NULL)) == ((time_t) - 1) )
+				return ((char *)NULL);
+		
+		 if ( strftime(d,15, "%d%m%Y%H%M%S", localtime(&lt)) != (sizeof(d) - 1))
+				return ((char *) NULL);
+
+#ifdef DEBUG
+    MSG_OUT;
+#endif
+
+        return(d);
+
+}/* End of getdtm1*/ 
+
+/****************************************************************************
+
+function				: file_sum_log()
+
+Description 				: Prints the results of the files processed in the log.
+
+Input parameters  			: None
+
+Called Function   			: None
+
+Calling Function  			: main
+
+Return value      			: NONE
+----------------------------------------------------------------------------*/
+
+void file_sum_log()
+{
+		static char *module ="file_sum_log";
+
+#ifdef DEBUG
+MSG_IN
+#endif
+
+      sprintf(globfo.logline,"\n\nPROCESS SUMMARY");
+      wrt_log(TRUE,SUCCESS,globfo.logline);
+
+      sprintf(globfo.logline,"------------------------------------------------ -------------------------------\n");
+      wrt_log(TRUE,SUCCESS,globfo.logline);
+
+      sprintf(globfo.logline,"Total number of Files for Processing          : %ld",tot_files);
+
+      wrt_log(TRUE,SUCCESS,globfo.logline);
+
+      sprintf(globfo.logline,"Total number of Files Sucessfully processed   : %ld",tot_files_prcsd);
+      wrt_log(TRUE,SUCCESS,globfo.logline);
+
+      sprintf(globfo.logline,"Total number of Files Rejected                : %ld",tot_files_rejctd);
+      wrt_log(TRUE,SUCCESS,globfo.logline);
+
+      sprintf(globfo.logline,"-------------------------------------------------------------------------------\n");
+      wrt_log(TRUE,SUCCESS,globfo.logline);
+
+#ifdef DEBUG
+MSG_OUT;
+#endif
+
+}
+
+/*--------------------------------------------------------------------------
+Function 				: chk_isnum(char *str, int len)
+	
+Summary 				: RValidates the numeric values in a string.
+
+Input Parameters     			: str - string containing numeric value
+					  len - length of string
+					  fld_nm - field name
+
+Output parameters			: none
+
+Return value				: SUCCESS/ FAIL.
+
+----------------------------------------------------------------------------*/
+int chk_isnum(char *str, int len)		
+{
+		static char module[]="chk_isnum";
+		int         sta = 0, end = 0, i = 0;
+		int j=0;
+		int flag=0;
+
+		while(i < len)
+		{
+		         if(flag==1)
+      		   {
+        					j=j+1;
+        					if(str[i] == DOT)
+        					return(FAIL);
+       		   }
+       		   if(str[i] != DOT)
+        			{
+        					if ( !isdigit(str[i])  || j==3)
+        					{
+           						return(FAIL);    /* Invalid Number */
+        					}
+        			}
+        			if( str[i] == DOT)
+        			flag=1;
+
+     				++i;
+
+ 		 } /* End of while loop */
+
+  return(SUCCESS);
+
+} /* End of chk_isnum() function */
+
+/*****************************************************************************
+Function 			:	insert_into_prgrm_stts
+Summary 			: 	Checks whether the process is already running.
+Input parameters  		: 	SUCCESS/FAIL
+Calling Funcrtion 		: 	start_up, main
+Called Function   		: 
+Return Value			:	SUCCESS/FAIL
+****************************************************************************/
+int insert_into_prgrm_stts(int stat)
+{
+		static char module[] = "insert_into_prgrm_stts";
+		int pid=0;
+		int check =0;
+		pid=getpid();
+		VC_INIT(proc_start_time);
+		VSTRCPY(proc_start_time,getdtm1());
+
+		if(stat==3)
+		{
+				sql_stmt= 11;
+				EXEC SQL SELECT 1 into 
+						:check FROM PRGRM_STTS	
+						where PST_DATE =:sys_curr_date
+						and PST_PPC_ID='LSDV'
+						and PST_PRGRM_STTS='R';
+				if(check ==1)
+				{
+						fprintf(stdout,"Process in already running\n");
+						sprintf(globfo.logline,"The process is already running \n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);						
+						return(FAIL);
+				}
+				else
+				{
+						sql_stmt =12;
+						EXEC SQL INSERT INTO 
+						PRGRM_STTS (PST_DATE ,		
+										PST_PRGRM_ID,
+										PST_PRGRM_STTS ,
+										PST_STRT_TIME ,
+										PST_PRGRM_NAME,
+										PST_PPC_ID )
+										values
+										(to_date(:sys_curr_date,'DD-MON-YYYY'),
+										 :pid,
+										 'R',
+										 to_date(:proc_start_time,'DDMMYYYYHH24MISS'),
+										 'NCDBLSDV',
+										 'LSDV');
+						if(ORA_ERROR)
+						{		
+								sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+								wrt_log(TRUE,SUCCESS,globfo.logline);
+								fprintf(stdout,"Error while inserting record into PRGRM_STTS\n");
+								return(FAIL);
+						} 
+				}
+		}
+
+		if(stat == 0)
+		{
+				VC_INIT(proc_end_time);	
+				VSTRCPY(proc_end_time,getdtm1());
+
+				sql_stmt=14;
+				EXEC SQL UPDATE PRGRM_STTS
+							SET PST_PRGRM_STTS='C',
+							PST_END_TIME=to_date(:proc_end_time,'DDMMYYYYHH24MISS'),
+							PST_LOG_FILE=:log_file_name
+							where PST_DATE = :sys_curr_date
+							AND PST_PPC_ID ='LSDV'
+							AND PST_PRGRM_STTS ='R';
+				if(ORA_ERROR)
+				{
+						fprintf(stdout,"Error in updating PRGRM_STTS\n");
+						sprintf(globfo.logline,"Error in updating PRGRM_STTS \n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						return(FAIL);
+				}
+		}
+	
+		if( stat == 1)
+		{
+				VC_INIT(proc_end_time);	
+				VSTRCPY(proc_end_time,getdtm1());
+				sql_stmt =17;
+				EXEC SQL UPDATE PRGRM_STTS
+							SET PST_PRGRM_STTS='E',
+							PST_END_TIME=to_date(:proc_end_time,'DDMMYYYYHH24MISS'),
+							PST_LOG_FILE=:log_file_name
+							WHERE PST_DATE=:sys_curr_date
+							AND PST_PPC_ID='LSDV'
+							AND PST_PRGRM_STTS='R';
+				if(ORA_ERROR)
+				{
+						fprintf(stdout,"Error in updating PRGRM_STTS \n");	
+						PROC_ERR;
+						put_mod(module);
+						return(FAIL);
+				}
+							
+		}
+
+		EXEC SQL COMMIT;
+
+		return (SUCCESS);
+
+}		/* End of insert into prgrm_stts function */	
+			
+/***************************************************************************** **
+Function          :     move_file
+
+Description       :     Moves file to failure or Success depending on the flag
+
+Input parameters  :     None
+
+Called Function   :
+
+Calling Function  :     main();
+
+Return value      :     SUCCESS / FAIL
+*******************************************************************************/
+
+int move_file(int stat)
+{
+		static char module[] ="move_file";
+		char mvstring  [400];
+	
+#ifdef DEBUG
+		 MSG_IN
+#endif			
+
+		C_INIT(mvstring);
+		
+		if( stat == SUCCESS)
+		{
+				sprintf(mvstring,"mv %s/%s %s",getenv("IFO_GET_SDV"),seq_fname,getenv("IFO_GET_SDV_SUCC"));
+
+				system(mvstring);
+				
+#ifdef DEBUG
+		 printf ("Move string  %s\n",mvstring);
+#endif
+		}
+		else
+		{
+				sprintf(mvstring,"mv %s/%s %s",getenv("IFO_GET_SDV"),seq_fname,getenv("IFO_GET_SDV_FAIL"));
+				system(mvstring);
+#ifdef DEBUG
+		 printf ("Move string for failure  %s \n",mvstring);
+#endif
+		}
+
+		return(FAIL);
+
+
+} /* End of move_file function */
+
+
+/****************************************************************************
+Function					: print_file_summ()
+
+Summary 					: Prints the summary for the individual file
+
+Calling function				: read_split_vldt_file_rec
+
+Called function					: None
+
+Input parameters				: None
+
+Return Value					: SUCCESS/FAIL
+*****************************************************************************/
+int print_file_summ()
+{
+		static char module[]="print_file_sum";
+		
+#ifdef DEBUG
+		 MSG_IN
+#endif				
+
+		sprintf(globfo.logline,"No. of records in the file            :%ld",recs_to_load);
+		wrt_log(TRUE,SUCCESS,globfo.logline);
+		
+		sprintf(globfo.logline,"No. of records loaded.                :%ld",recs_load);
+		wrt_log(TRUE,SUCCESS,globfo.logline);
+		
+		sprintf(globfo.logline,"No. of records rejected.              :%ld",tot_recs_rjctd);
+		wrt_log(TRUE,SUCCESS,globfo.logline);
+		
+		sprintf(globfo.logline,"No of records updated to zero.        :%ld",recs_details_not_sent);
+		wrt_log(TRUE,SUCCESS,globfo.logline);
+
+		sprintf(globfo.logline,"--------------------------------------------------------------------------------\n");
+		wrt_log(TRUE,SUCCESS,globfo.logline);
+
+		return(SUCCESS);	
+
+			
+}		/* End of print_file_sum */
+
+
+/****************************************************************************
+Function				: ins_into_cltrl_cntrl()
+
+Description 				: inserts records into the cntrl_cntrl table
+
+Calling function			: main
+
+Called function				: None
+
+Return type             		: SUCCESS/FAIl
+***************************************************************************/
+
+int ins_into_cltrl_cntrl()
+{
+		static char module[]="ins_into_cntrl_cntrl";
+
+#ifdef DEBUG
+		MSG_IN
+#endif   	 		
+
+		sql_stmt = 811;
+		EXEC SQL  INSERT into 
+			  CLTRL_CNTRL 
+			  ( CLC_BTCH_DATE,
+				 CLC_FILE_IDNTFR, 
+				 CLC_CLTRL_CTGRY, 
+				 CLC_CSTDN_CODE, 
+				 CLC_BTCH_NO, 
+				 CLC_NO_OF_RECS 	
+				)
+			  VALUES
+			  ( to_date(:vc_cntrl_btch_dt,'DDMMYYYY'),
+				 'SEC',
+				 UPPER(:vc_fil_col_type),
+				 UPPER(:vc_cntrl_cstdn_code),
+				 :vc_fil_btch_no,	
+				 :recs_load
+				);
+
+		if(ORA_ERROR)
+		{
+				sprintf(globfo.logline,"%d %.*s\n",sqlca.sqlcode,sqlca.sqlerrm.sqlerrml,sqlca.sqlerrm.sqlerrmc);
+				wrt_log(TRUE,SUCCESS,globfo.logline);
+				PROC_ERR;
+				put_mod(module);
+				return(FAIL);
+		}			
+	
+		 EXEC SQL COMMIT;
+		return(SUCCESS);	
+
+} /* End of ins_into_cltrl_cntrl() */
+
+
+/*
+ *  This function converts any lowercase strings into uppercase.
+ *  The inplace parameter will decide whether change has to done in input string or
+ *  output string .
+ */
+int to_upper(char* input_field ,char* output_field ,int inplace)
+{
+   int count = 0;
+   for(count = 0; count < strlen(input_field) ; count++)
+   {
+      if(inplace)
+      {
+         input_field[count] =  toupper(input_field[count]);
+      }
+      else
+      {
+         output_field[count] =  toupper(input_field[count]);
+      }
+   }
+   /* output_field[count] = '\0'; */
+   return SUCCESS;
+}
+
