@@ -1,0 +1,1161 @@
+Main::::
+-------------------------------------------------------------------------------------------------------
+
+package com.ncdex.ncms.ncdbsdvl;
+
+import java.io.File;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+
+public class MainClass {
+	public static final String FILE_MASK="[A-Za-z]*_[Nn][Cc][Dd][Ee][Xx]_[A-Za-z]{3}_[Dd][Ee][Tt][Aa][Ii][Ll][Ss]_[0-9]{8}.[Tt][0-9]{2}";
+	public static final String fileColType = "ABC";
+	public static void main(String args[]){
+		 final String directoryLinuxMac ="/Users/loiane/test";
+	        //Windows directory example
+	        final String directoryWindows ="B://Vinod Kumar Siripuram//NCDEXfiles"; 	        
+	        final String seperator = ",";
+	        List<File> fileList = FilesUtil.getListAllFilesWithPattern(directoryWindows, FILE_MASK);
+	        Map<String, Integer> constMap = getConstantsMap();
+	        if(fileList!=null && !fileList.isEmpty()){
+	        	for(File file : fileList){
+	        		
+	        		System.out.println("-------------------- " + file.getName() + " Starts -------------------------------------");
+	        		
+	        		if(file!=null){
+	        			String arrFN[] = FilesUtil.getFileNameSplit(file.getName());
+	        			System.out.println("File Nale Split : " + arrFN[0] + "\t" + arrFN[1]);
+	        			List<String[]> fileDataList = FilesUtil.getFileDataList(file, seperator);
+	        			if(fileDataList!=null && !fileDataList.isEmpty() && fileDataList.get(0)!=null){
+	        				
+	        				String arrChkSm[] = fileDataList.get(0);
+	        				String arrfileName[] = FilesUtil.getFileNameSplit(file.getName());
+	        				System.out.println("################## file Name Details #########################");
+
+	        				for(String name : arrfileName){
+	        					System.out.print(name + "\t");
+	        				}
+	        				fileDataList.remove(0);
+	        				System.out.println("arrChkSm : " + arrChkSm);
+	        				System.out.println("isFileColTypeValid : " + FileDataValidationUtil.isFileColTypeValid(arrfileName,2, fileColType));
+	        				System.out.println("isFileNameFieldsValid : " + FileDataValidationUtil.isFileNameFieldsValid(arrfileName,5, arrChkSm, 3, constMap.get(FileDataConstants.CNTRL_FIELD_CNT)));
+	        				System.out.println("isFileDataValid :: " + FileDataValidationUtil.isFileDataValid(fileDataList, 11,constMap));
+	        			
+	        				/*for(String[] arrData : fileDataList){
+	        					if(arrData!=null && arrData.length>0){
+	        						for(int i=0; i<arrData.length; i++){
+	        							//System.out.print(data + "\t");
+	        						}
+	        						//System.out.println();
+	        					}
+	        				}*/
+	        			}
+	        			
+	        		}
+	        		System.out.println("-------------------- " + file.getName() + " Ends -------------------------------------");
+	        	}
+	        }
+	}
+	
+	public static Map<String, Integer> getConstantsMap(){
+		 Map<String, Integer> constMap = new HashMap<String, Integer>();
+	        constMap.put(FileDataConstants.DATA_RECORD_LEN, 2050);
+			constMap.put(FileDataConstants.DATA_RECORD_LEN, 2050);
+	        constMap.put(FileDataConstants.CSTDN_CODE_LEN, 6);
+	        constMap.put(FileDataConstants.DEP_TYPE_LEN, 4);
+	        constMap.put(FileDataConstants.PRM_MBR_LEN, 6);
+	        constMap.put(FileDataConstants.CLM_LEN, 7);
+	        constMap.put(FileDataConstants.MEM_LEN, 13);
+	        constMap.put(FileDataConstants.TM_LEN, 6);
+	        constMap.put(FileDataConstants.FILE_NAME_CNT, 6);
+	        constMap.put(FileDataConstants.FILE_NAME, 40);
+	        constMap.put(FileDataConstants.VAL_AMT_LEN, 16);
+	        constMap.put(FileDataConstants.SECDEPS_LEN, 16);
+	        constMap.put(FileDataConstants.COL_TYPE_LEN, 4);
+	        constMap.put(FileDataConstants.BTCH_NO_STR_LEN, 4);
+	        constMap.put(FileDataConstants.REC_TYPE_LEN, 3);
+	        constMap.put(FileDataConstants.BTCH_DT_LEN, 9);
+	        constMap.put(FileDataConstants.NO_OF_RECS_LEN, 8);
+	        constMap.put(FileDataConstants.UPDT_DT_TIME_LEN, 15);
+	        constMap.put(FileDataConstants.DATE_LEN, 30);
+	        constMap.put(FileDataConstants.MEM_TYPE_LEN,2);
+	        constMap.put(FileDataConstants.SYMBOL_LEN,16);
+	        constMap.put(FileDataConstants.QUANTITY_LEN,16);
+	        constMap.put(FileDataConstants.HAIR_CUT_LEN,6);
+	        constMap.put(FileDataConstants.DT_LEN,9);
+	        constMap.put(FileDataConstants.CNTRL_FIELD_CNT, 8);
+	        constMap.put(FileDataConstants.BTCH_NO_LEN, 3); // need to change value
+	        
+	        return constMap;
+	        
+	}
+}
+----------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+FilesUtil:::::
+
+package com.ncdex.ncms.ncdbsdvl;
+
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Scanner;
+import java.util.regex.Pattern;
+
+
+public class FilesUtil {
+    /**
+     * List all the files and folders from a directory
+     * @param directoryName to be listed
+     */
+    public static void listFilesAndFolders(String directoryName){
+        File directory = new File(directoryName);
+        //get all the files from a directory
+        File[] fList = directory.listFiles();
+        for (File file : fList){
+            System.out.println(file.getName());
+        }
+    }
+    /**
+     * List all the files under a directory
+     * @param directoryName to be listed
+     */
+    public static void listFiles(String directoryName){
+        File directory = new File(directoryName);
+        //get all the files from a directory
+        File[] fList = directory.listFiles();
+        for (File file : fList){
+            if (file.isFile()){
+                System.out.println(file.getName());
+            }
+        }
+    }
+    /**
+     * List all the folder under a directory
+     * @param directoryName to be listed
+     */
+    public static void listFolders(String directoryName){
+        File directory = new File(directoryName);
+        //get all the files from a directory
+        File[] fList = directory.listFiles();
+        for (File file : fList){
+            if (file.isDirectory()){
+                System.out.println(file.getName());
+            }
+        }
+    }
+    /**
+     * List all files from a directory and its subdirectories
+     * @param directoryName to be listed
+     */
+    public static void listFilesAndFilesSubDirectories(String directoryName){
+        File directory = new File(directoryName);
+        //get all the files from a directory
+        File[] fList = directory.listFiles();
+        for (File file : fList){
+            if (file.isFile()){
+                System.out.println(file.getAbsolutePath());
+            } else if (file.isDirectory()){
+                listFilesAndFilesSubDirectories(file.getAbsolutePath());
+            }
+        }
+    }
+    
+    /**
+     * List all the objects of files under a directory
+     * @param directoryName to be listed
+     */
+    public static List<File> getListOfAllFilesInDirectory(String directoryName){
+    	List<File> filesList = new ArrayList<File>();
+        File directory = new File(directoryName);
+        //get all the files from a directory
+        if(directory!=null && directory.exists()){
+	        File[] fList = directory.listFiles();
+	        if(fList!=null && fList.length>0){
+		        for (File file : fList){
+		            if (file.isFile()){
+		            	filesList.add(file);
+		            }
+		        }
+	        }
+        }
+        return filesList;
+    }
+    
+    public static List<File> getListAllFilesWithPattern(String filePath, String fileMask){
+    	List<File> filesList = new ArrayList<File>();
+    	if(filePath!=null && filePath!="" && fileMask!=null && fileMask!=""){
+	        File directory = new File(filePath);
+	        //get all the files from a directory
+	        if(directory!=null && directory.exists()){
+		        File[] fList = directory.listFiles();
+		        if(fList!=null && fList.length>0){
+			        for (File file : fList){
+			        	
+			            if (file.isFile() && file.getName()!=null){
+			            	boolean isValidName = validateFileNameFormat(file.getName(), fileMask);
+			            	System.out.println(file.getName() +" : " +isValidName+"\n\n\n\n");
+			            	if(isValidName){
+			            		filesList.add(file);
+			            	}
+			            }
+			        }
+		        }
+	        }
+    	}
+        return filesList;
+    }
+    
+    public static String[] getFieldsData(String inputData, String seperator){
+    	String arrData[] = null;
+    	if(inputData!=null && inputData!="" && seperator!=null && seperator!=""){
+    		arrData = inputData.split(seperator);
+    	}
+    	return arrData;
+    }
+    
+    public static List<String[]> getFileDataList(File file, String seperator){
+    	List<String[]> dataList = new ArrayList<String[]>();
+    	try {
+	        Scanner sc = new Scanner(file);
+	        while(sc.hasNextLine()) {
+	            String s = sc.nextLine();
+	            if(s!=null && s!=""){
+	            	dataList.add(FilesUtil.getFieldsData(s, seperator));
+	            }
+	        }
+	    }
+	    catch(FileNotFoundException e) {
+	        System.err.println("File not found. Please scan in new file.");
+	    }
+	    return dataList;
+    }
+    
+    public static List<SecDepsDetails> getSecDepsDetailsList(List<String[]> arrDataList){
+    	List<SecDepsDetails> dataList = new ArrayList<SecDepsDetails>();
+    		if(arrDataList!=null && !arrDataList.isEmpty()){
+    			for(String arrData[] : arrDataList){
+    				SecDepsDetails secDepDet = new SecDepsDetails();
+    				if(arrData!=null && arrData.length>0){
+    					if(arrData[1]!=null){
+    						secDepDet.setSdpDetMemTyp(arrData[1]);
+    					}
+    					if(arrData[2]!=null){
+    						secDepDet.setSdpDetMemTyp(arrData[2]);
+    					}
+    				}
+    			}
+    		}
+	    return dataList;
+    }
+    
+    public static boolean validateFileNameFormat(String fileName, String fileMask){
+    	try{
+    		return Pattern.matches(fileMask, fileName);
+    	}catch(Exception e){
+    		return false;
+    	}
+    }
+    
+    public static String[] getFileNameSplit(String fileName){
+    	List<String> list = new ArrayList<String>();
+    	if(fileName!=null && !fileName.equals("")){
+    		String arrFName[] = fileName.split("\\.");
+    		if(arrFName!=null && arrFName[0]!=null){
+    			String arrName[] = arrFName[0].split("_");
+    			for(String name : arrName){
+    				list.add(name);
+    			}
+    		}
+    		if(arrFName!=null && arrFName[1]!=null){
+    			list.add(arrFName[1]);
+    		}
+    			
+    	}
+    	return list.toArray(new String[list.size()]);
+    }
+    public static void main (String[] args){
+        final String directoryLinuxMac ="/Users/loiane/test";
+        //Windows directory example
+        final String directoryWindows ="B://Vinod Kumar Siripuram//NCDEXfiles"; 
+        final String fileNamePrefix = "SHCIL_NCDEX_ABC_DETAILS";
+        final String seperator = ",";
+        List<File> fileList = getListAllFilesWithPattern(directoryWindows, fileNamePrefix);
+        if(fileList!=null && !fileList.isEmpty()){
+        	for(File file : fileList){
+        		System.out.println("-------------------- " + file.getName() + " Starts -------------------------------------");
+        		if(file!=null){
+        			List<String[]> fileDataList = getFileDataList(file, seperator);
+        			if(fileDataList!=null && !fileDataList.isEmpty()){
+        				String arrChkSm[] = fileDataList.get(0);
+        				fileDataList.remove(0);
+        				System.out.println("arrChkSm : " + arrChkSm);
+        				for(String[] arrData : fileDataList){
+        					if(arrData!=null && arrData.length>0){
+        						/*for(int i=0; i<arrData.length; i++){
+        							System.out.print(data + "\t");
+        						}*/
+        						//System.out.println();
+        					}
+        				}
+        			}
+        			
+        		}
+        		System.out.println("-------------------- " + file.getName() + " Ends -------------------------------------");
+        	}
+        }
+    }
+    
+    
+}
+
+------------------------------------------------------------------------------------------------------
+
+filevalidationutil:::::::
+-------------------------------------------------------------------------------------------------------
+
+
+
+package com.ncdex.ncms.ncdbsdvl;
+
+import java.math.BigDecimal;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+public class FileDataValidationUtil {
+	private static StringBuilder sb = new StringBuilder();
+	private static BigDecimal totalGrossValuation = null;
+	private static BigDecimal totalNetValuation = null;
+
+	public static boolean isFileNameFieldsValid(String[] arrfileNameFields,
+			int indxFileNameFiled, String[] arrControlRec, int indxChk,
+			int arrContrlRecLength) {
+		System.out.println("===========================indxFileNameFiled : "
+				+ indxFileNameFiled + "\t indxChk : " + indxChk
+				+ "\t arrChksmLength : " + arrContrlRecLength
+				+ "\t arrChksm[indxChk] : " + arrControlRec[indxChk]
+				+ "\t arrfileNameFields[indxFileNameFiled] : "
+				+ arrfileNameFields[indxFileNameFiled]);
+		boolean isValid = true;
+	if(arrControlRec != null && arrControlRec.length != arrContrlRecLength){
+		isValid = false;
+		sb.append("\nControl record size mismatch ");
+	}else if (arrControlRec != null && arrControlRec.length == arrContrlRecLength 
+		&& arrControlRec[indxChk] != null
+		&& arrfileNameFields[indxFileNameFiled] != null) {
+			switch (indxChk) {
+			case 1:
+				/*
+				 * Validate the member code from the file name whether the
+				 * custodian code exists in the database
+				 */
+				if(!(arrControlRec[indxChk].equals(arrfileNameFields[indxFileNameFiled]))){
+					sb.append("Invalid custodian code in the file name");
+					isValid = false;
+				}
+				
+				// sprintf(globfo.logline,"\n Invalid custodian code in the file name\n");
+				if (isValid) {
+					isValid = SecDepsDetailsDao
+							.isCustodianCodeExist(arrfileNameFields[indxFileNameFiled]);
+					sb.append("Custodian Code not found in the CSTDN_MSTR");
+					// sprintf(globfo.logline,"\n Custodian Code not found in the CSTDN_MSTR\n");
+				}
+
+				break;
+
+			case 2:
+				/*
+				 * check for whether the file date is equal to the system
+				 * current date
+				 */
+				String strYYYYMMDD = getDateInYYYYMMDD(arrControlRec[indxChk]);
+				System.out.println("YYYYMMDD : " + strYYYYMMDD);
+				/*String fileNameDate = "";*/
+				/*try {
+					if (arrfileNameFields[indxFileNameFiled] != null
+							&& arrfileNameFields[indxFileNameFiled]
+									.contains(".")) {
+						fileNameDate = arrfileNameFields[indxFileNameFiled]
+								.substring(0,arrfileNameFields[indxFileNameFiled].indexOf("."));
+					}
+				} catch (Exception e) {
+					fileNameDate = "";
+				}*/
+				System.out.println("fileNameDate : " + arrfileNameFields[indxFileNameFiled]);
+				if(!strYYYYMMDD.equals(arrfileNameFields[indxFileNameFiled])){
+					isValid = false;
+					sb.append("\nThe file batch date is not in correct format");
+				}
+				// sprintf(globfo.logline,"The file batch date is not in correct format\n");
+				// printf("\nfile date not in format %s",vc_fil_btch_dt.arr);
+				// printf("\nThe file batch date is not equal to system current date\n");
+				// sprintf(globfo.logline,"\n The file batch date is not equal to current date \n");
+
+				break;
+
+			case 3:
+				String fileNameExtn = arrfileNameFields[indxFileNameFiled];
+				/*try {
+					if (arrfileNameFields[indxFileNameFiled] != null
+							&& arrfileNameFields[indxFileNameFiled]
+									.contains(".")) {
+						fileNameExtn = arrfileNameFields[indxFileNameFiled]
+								.substring(9);
+
+						System.out.println("1 fileNameExtn : " + fileNameExtn);
+						if (fileNameExtn != null) {
+							fileNameExtn = fileNameExtn.substring(1);
+						}
+					}
+				} catch (Exception e) {
+					fileNameExtn = "";
+				}*/
+				System.out.println("fileNameExtn : " + fileNameExtn);
+				if (fileNameExtn != null) {
+					fileNameExtn = fileNameExtn.substring(1);
+				}
+				System.out.println("After fileNameExtn : " + fileNameExtn);
+				if(!CommonUtil.isNumeric(fileNameExtn)){
+					isValid = false;
+					sb.append("\nNon Numeric value in the batch number ");
+				}
+				if(!fileNameExtn.equals(arrControlRec[indxChk])){
+					isValid = false;
+				}
+
+				break;
+
+			default:
+
+				/* Check whether the file batch number is numeric */
+				/*
+				 * if(strcmp(fil_prcs_flg,"S") == SUCCESS ) { if( chk_isnum
+				 * (fil_btch_no,strlen(fil_btch_no)) != SUCCESS ) {
+				 * sprintf(globfo
+				 * .logline,"Non Numeric value in the batch number \n");
+				 * wrt_log(TRUE,SUCCESS,globfo.logline);
+				 * memset(seq_fname+strlen(seq_fname)-1,'\0',1);
+				 * strcpy(fil_prcs_flg,"F"); return(SUCCESS); } }
+				 */
+
+				/*
+				 * Checking the batch number whether it is already loaded for
+				 * the day
+				 */
+				/*
+				 * if(strcmp(fil_prcs_flg,"S") == SUCCESS ) { sql_stmt =15; EXEC
+				 * SQL SELECT nvl(MAX(NVL(CLC_BTCH_NO,0)),0) into
+				 * :vc_cntrl_btch_no FROM CLTRL_CNTRL_DET WHERE CLC_BTCH_DATE
+				 * =to_date(:vc_fil_btch_dt,'YYYYMMDD') and
+				 * UPPER(CLC_FILE_IDNTFR) = UPPER(:vc_fil_idntfr) and
+				 * UPPER(CLC_CLTRL_CTGRY) = UPPER(:vc_fil_col_type) and
+				 * UPPER(CLC_CSTDN_CODE) = UPPER(:vc_fil_cstdn_code);
+				 * 
+				 * if(ORA_ERROR) { PROC_ERR; put_mod(module); return(FAIL); }
+				 * 
+				 * int_fil_btch_no = atoi(fil_btch_no);
+				 */
+
+				/*
+				 * Checking the batch number for summary file whether it is
+				 * already loaded for the day or not
+				 */
+
+				/*
+				 * ret_int=0;
+				 * 
+				 * sql_stmt =16; EXEC SQL SELECT nvl(MAX(NVL(CLC_BTCH_NO,0)),0)
+				 * into :vc_cntrl_btch_no1 FROM CLTRL_CNTRL WHERE CLC_BTCH_DATE
+				 * =to_date(:vc_fil_btch_dt,'YYYYMMDD') AND
+				 * UPPER(CLC_FILE_IDNTFR) = UPPER(:vc_fil_idntfr) AND
+				 * UPPER(CLC_CLTRL_CTGRY) = 'ABC' AND UPPER(CLC_CSTDN_CODE) =
+				 * UPPER(:vc_fil_cstdn_code);
+				 * 
+				 * if(ORA_ERROR) { PROC_ERR; put_mod(module); return(FAIL); }
+				 */
+
+				/*
+				 * if (int_fil_btch_no != vc_cntrl_btch_no1) { printf(
+				 * "\n Summary File for Batch No:: %d is Loaded in the Secdeps\n"
+				 * , vc_cntrl_btch_no1); strcpy(fil_prcs_flg,"F");
+				 * sprintf(globfo.logline,
+				 * "\n Summary File for Batch No:: %d is Loaded in the Secdeps\n"
+				 * , vc_cntrl_btch_no1); wrt_log(TRUE,SUCCESS,globfo.logline);
+				 * sprintf(globfo.logline,
+				 * "\n And You are Trying to load Detail Val File for Batch No:: %d \n"
+				 * , int_fil_btch_no); wrt_log(TRUE,SUCCESS,globfo.logline);
+				 * memset(seq_fname+strlen(seq_fname)-1,'\0',1);
+				 * return(SUCCESS); }
+				 * 
+				 * 
+				 * 
+				 * #ifdef DEBUG
+				 * printf("\n The int  file batch number is   %d",int_fil_btch_no
+				 * );
+				 * printf("\n The control batch number is  %d ",vc_cntrl_btch_no
+				 * ); #endif
+				 * 
+				 * if( int_fil_btch_no == vc_cntrl_btch_no) {
+				 * strcpy(fil_prcs_flg,"F"); sprintf(globfo.logline,
+				 * "Invalid batch number.File already loaded for the day \n");
+				 * wrt_log(TRUE,SUCCESS,globfo.logline);
+				 * memset(seq_fname+strlen(seq_fname)-1,'\0',1);
+				 * return(SUCCESS); }
+				 * 
+				 * if(strcmp(fil_prcs_flg,"S") == SUCCESS) { if( int_fil_btch_no
+				 * < vc_cntrl_btch_no ) { strcpy(fil_prcs_flg,"F");
+				 * sprintf(globfo.logline,
+				 * "The file for the batch number is already loaded for the day \n"
+				 * ); wrt_log(TRUE,SUCCESS,globfo.logline);
+				 * memset(seq_fname+strlen(seq_fname)-1,'\0',1);
+				 * return(SUCCESS); } }
+				 * 
+				 * if(strcmp(fil_prcs_flg,"S") == SUCCESS) { if(
+				 * vc_cntrl_btch_no != (int_fil_btch_no-1 )) {
+				 * strcpy(fil_prcs_flg,"F"); sprintf(globfo.logline,
+				 * "The file for the previous batch number has not been loaded \n"
+				 * ); wrt_log(TRUE,SUCCESS,globfo.logline);
+				 * memset(seq_fname+strlen(seq_fname)-1,'\0',1);
+				 * return(SUCCESS); } }
+				 */
+
+				break;
+			}
+		}else{
+			isValid=false;
+		}
+		System.out.println("\n" + sb.toString());
+		return isValid;
+	}
+	
+	
+		
+	public static boolean isControlRecordValid(String[] arrCntrlRec, Map<String, Integer> constMap){
+		boolean isValid = true;
+		
+	
+			if ( CommonUtil.getArrayLength(arrCntrlRec) != constMap.get(FileDataConstants.CNTRL_FIELD_CNT))
+			{
+				isValid = false;                            
+				sb.append("\nControl record size mismatch  ");
+			}					
+			if(CommonUtil.getArrayLength(arrCntrlRec) > constMap.get(FileDataConstants.CNTRL_FIELD_CNT))
+			{
+				sb.append("\nControl record size exceeds. ");
+				isValid=false;
+			}
+							
+			
+					if ( (CommonUtil.getStringLength(arrCntrlRec[0]) > constMap.get(FileDataConstants.REC_TYPE_LEN) -1) || (CommonUtil.getStringLength(arrCntrlRec[1]) > constMap.get(FileDataConstants.CSTDN_CODE_LEN) -1 ) || ( CommonUtil.getStringLength(arrCntrlRec[2]) > constMap.get(FileDataConstants.BTCH_DT_LEN) -1 ) || ( CommonUtil.getStringLength(arrCntrlRec[3]) > constMap.get(FileDataConstants.BTCH_NO_LEN) -1 ) || ( CommonUtil.getStringLength(arrCntrlRec[4]) > constMap.get(FileDataConstants.BTCH_DT_LEN) -1 ) || (CommonUtil.getStringLength(arrCntrlRec[5]) > constMap.get(FileDataConstants.VAL_AMT_LEN) -1 ) || (CommonUtil.getStringLength(arrCntrlRec[6]) > constMap.get(FileDataConstants.VAL_AMT_LEN) -1 ) || (CommonUtil.getStringLength(arrCntrlRec[7]) > constMap.get(FileDataConstants.NO_OF_RECS_LEN) -1 ) )
+					{
+						sb.append("\nMismatch in control record ");
+						isValid = false;
+					}						
+
+					if ( CommonUtil.getStringLength(arrCntrlRec[2]) < constMap.get(FileDataConstants.BTCH_DT_LEN) -1 )
+					{
+						sb.append("\nInvalid Batch Date format in the control record ");
+						isValid = false;
+					}
+
+					if( CommonUtil.getStringLength(arrCntrlRec[4]) < constMap.get(FileDataConstants.BTCH_DT_LEN) -1 )
+					{
+						sb.append("\nInvalid Valuation date format in the control record ");
+						isValid = false;
+					}
+					
+						/* Copying the fields into the buffer variables and then into the c variables */
+				/*	C_INIT(buff_cntrl_rec_type);
+					strcpy(buff_cntrl_rec_type,fields[0]);
+					trim_str(' ',buff_cntrl_rec_type);
+					C_INIT(cntrl_rec_type);
+					strncpy(cntrl_rec_type,buff_cntrl_rec_type,sizeof(cntrl_rec_type));*/
+
+					/*if( atoi(cntrl_rec_type) != 10)
+					{
+						sprintf(globfo.logline,"Invalid record type in the control record \n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+					}*/
+
+					/*C_INIT(buff_cntrl_cstdn_code);
+					strcpy(buff_cntrl_cstdn_code,fields[1]);
+					trim_str(' ',buff_cntrl_cstdn_code);
+		            		C_INIT(cntrl_rec_cstdn_code);
+					strncpy(cntrl_rec_cstdn_code,buff_cntrl_cstdn_code,sizeof(cntrl_rec_cstdn_code));
+					VSTRCPY(vc_cntrl_cstdn_code,cntrl_rec_cstdn_code);
+		           
+
+					C_INIT(buff_cntrl_rec_btch_dt);
+					C_INIT(cntrl_rec_btch_dt);		
+					strcpy(buff_cntrl_rec_btch_dt,fields[2]);
+					trim_str(' ',buff_cntrl_rec_btch_dt);
+					strncpy(cntrl_rec_btch_dt,buff_cntrl_rec_btch_dt,sizeof(cntrl_rec_btch_dt));
+					VSTRCPY(vc_cntrl_btch_dt,cntrl_rec_btch_dt);
+			
+					C_INIT(buff_cntrl_btch_no);
+					C_INIT(cntrl_rec_btch_no);
+					strcpy(buff_cntrl_btch_no,fields[3]);
+					trim_str(' ',buff_cntrl_btch_no);
+					strncpy(cntrl_rec_btch_no,buff_cntrl_btch_no,sizeof(cntrl_rec_btch_no));
+
+					int_cntrl_btch_no = atoi(cntrl_rec_btch_no);
+			
+					C_INIT(buff_cntrl_vltn_dt);
+					C_INIT(cntrl_vltn_dt);
+					strcpy(buff_cntrl_vltn_dt,fields[4]);
+			 		trim_str(' ',buff_cntrl_vltn_dt);
+					strncpy(cntrl_vltn_dt,buff_cntrl_vltn_dt,sizeof(cntrl_vltn_dt));
+					VC_INIT(vc_cntrl_vltn_dt);
+					VSTRCPY(vc_cntrl_vltn_dt,cntrl_vltn_dt);
+
+					C_INIT(buff_cntrl_gross_vltn_amnt);
+					C_INIT(cntrl_gross_vltn_amnt);
+					strcpy(buff_cntrl_gross_vltn_amnt,fields[5]);
+					trim_str(' ',buff_cntrl_gross_vltn_amnt);
+					strncpy(cntrl_gross_vltn_amnt,buff_cntrl_gross_vltn_amnt,sizeof(cntrl_gross_vltn_amnt));
+			
+					C_INIT(buff_cntrl_net_vltn_amnt);
+					C_INIT(cntrl_net_vltn_amnt);
+					strcpy(buff_cntrl_net_vltn_amnt,fields[6]);
+					trim_str(' ',buff_cntrl_net_vltn_amnt);
+					strncpy(cntrl_net_vltn_amnt,buff_cntrl_net_vltn_amnt,sizeof(cntrl_net_vltn_amnt));
+				
+					C_INIT(buff_cntrl_no_of_recs);
+					C_INIT(cntrl_no_of_recs);
+					strcpy(buff_cntrl_no_of_recs,fields[7]);
+					trim_str(' ',buff_cntrl_no_of_recs);
+					strncpy(cntrl_no_of_recs,buff_cntrl_no_of_recs,sizeof(cntrl_no_of_recs));			
+			
+
+		                        printf("\n---Atul cntrl_no_of_recs : %ld",cntrl_no_of_recs);
+					no_of_recs= 1000 + atol(cntrl_no_of_recs);
+		                        printf("\n---Atul---> no_of_recs : %ld ",no_of_recs);
+					
+
+				
+				 	VSTRCPY(vc_cntrl_no_of_recs,cntrl_no_of_recs);
+					VSTRCPY(vc_cntrl_gross_vltn_amt,cntrl_gross_vltn_amnt);
+					VSTRCPY(vc_cntrl_net_vltn_amt,cntrl_net_vltn_amnt);
+
+					 Checking whether the custodian code in the file name and the code in the control record is matching 
+					printf("\n mismatch	%s			%s",vc_cntrl_cstdn_code.arr,vc_fil_cstdn_code.arr);
+			                 to_upper((char *)vc_cntrl_cstdn_code.arr,tab_cust,0);
+					 to_upper((char *)vc_fil_cstdn_code.arr,file_cust,0);*/
+
+					/*if( strcmp(tab_cust,file_cust) != SUCCESS )
+					{
+						sb.append("\nMismatch in the custodian code in control record and the file name ");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+					}*/
+
+					/* Check whether the number of records in control records are  numerical */
+					if( arrCntrlRec[7]==null || arrCntrlRec[7].isEmpty())
+					{
+						sb.append("\nMismatch in the no of recs in control record");
+						isValid=false;
+					}
+					if(!CommonUtil.isNumeric(arrCntrlRec[7]))
+					{
+						sb.append("\nNon Numeric value for no of recs in control record");
+						isValid=false;
+					}
+
+					/* Check whether the gross valuation amount in the control record is numerical */ 
+					if(!CommonUtil.isNumeric(arrCntrlRec[5]))
+					{
+						sb.append("\nNon numeric value for the gross valuation amount in the control record\n");
+						isValid=false;
+					}
+
+					/* Check whether the net valuation amount in the control record is numeric */
+					if(!CommonUtil.isNumeric(arrCntrlRec[6]))
+					{
+						sb.append("\nNon numeric value for net valuation amount in the control record\n");
+						isValid=false;
+					}	
+
+				/*	control_gross_vltn_amt=atof(cntrl_gross_vltn_amnt);
+					control_net_vltn_amt=atof(cntrl_net_vltn_amnt);*/	
+					BigDecimal controlGrossVldnAmt = null;
+					BigDecimal controlNetVldnAmt = null;
+					if(CommonUtil.isNumeric(arrCntrlRec[5]) && CommonUtil.isNumeric(arrCntrlRec[6])){
+						
+							controlGrossVldnAmt = new BigDecimal(arrCntrlRec[5]);
+							controlNetVldnAmt = new BigDecimal(arrCntrlRec[6]);
+						
+					}
+
+					if(controlGrossVldnAmt!=null && controlNetVldnAmt!=null && controlGrossVldnAmt.compareTo(controlNetVldnAmt)<0)
+					{
+						sb.append("\nNet valuation amount in control record is greater than the gross valuation amount");
+						isValid=false;
+					}
+				
+		/*#ifdef DEBUG
+					printf("\nfield 0 :%s",cntrl_rec_type);
+					printf("\nfield 1 : %s",cntrl_rec_btch_dt);
+					printf("\n field 2: %s",cntrl_rec_btch_no);
+					printf("\n field 3: %s",cntrl_vltn_dt);
+					printf("\n field 4: %s",cntrl_gross_vltn_amnt);
+					printf("\n field 5: %s",cntrl_net_vltn_amnt);
+					printf("\n field 6: %s",cntrl_no_of_recs);
+
+					printf("\nGross Val cntrl :%f",control_gross_vltn_amt);
+					printf("\nNet Val cntrl  :%f",control_net_vltn_amt);
+		#endif							*/
+		                        /*printf("\n---Atul---> No of Records in control record : %s",cntrl_no_of_recs); */
+
+
+				/* Check whether the file batch date and the file batch number is the same as the batch date and batch number of the control record */
+
+			
+				/*	ret_int=0;
+
+		#ifdef DEBUG*/
+					sb.append("\n Checking file batch date and cntrol rec btch date ");
+		/*#endif*/
+					/*sql_stmt = 20;	
+					EXEC SQL SELECT 1
+						into :ret_int 
+						from DUAL 			
+						where to_date(:vc_fil_btch_dt,'YYYYMMDD')= to_date(:vc_cntrl_btch_dt,'DDMMYYYY'); 
+			
+					if(ORA_ERROR)
+					{
+						PROC_ERR;
+						put_mod(module);
+						return(FAIL);
+					}	
+
+		#ifdef DEBUG
+					printf("\n Value of ret int  :%d ",ret_int);
+		#endif
+
+					if( ret_int == 0)
+					{
+						sprintf(globfo.logline,"The File Batch date does not match with the control record batch date");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+					}
+
+					if( int_fil_btch_no != int_cntrl_btch_no)
+					{
+						sprintf(globfo.logline,"The file batch no. does not match with the control record batch number \n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);		
+					}		
+*/
+					/* Checks whether the valuation date is in the correct format */
+					/*sql_stmt = 21;
+					if(vldt_date1((char *)vc_cntrl_vltn_dt.arr,"DDMMYYYY") != SUCCESS)
+				      	{
+						sprintf(globfo.logline,"Valuation date not in DDMMYYYY format\n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+		      			}
+				*/
+
+					/* Checks whether the valuation date is less than or equal to the batch date */
+					/*sql_stmt= 22;
+					ret_int=0;
+					EXEC SQL 
+				  		SELECT 1 into 		
+				  		:ret_int 
+				  		from dual 
+				  		where to_date(:vc_cntrl_vltn_dt,'DDMMYYYY') <= to_date(:vc_cntrl_btch_dt,'DDMMYYYY');
+
+					if(ORA_ERROR)
+					{
+						PROC_ERR;
+						put_mod(module);
+						return(FAIL);
+					}
+				
+					if( ret_int == 0)
+					{
+						sprintf(globfo.logline,"Valuation date is greater than the batch date\n");
+						wrt_log(TRUE,SUCCESS,globfo.logline);
+						strcpy(fil_prcs_flg,"F");
+						return(SUCCESS);
+					}*/
+
+				/*}*/ /* End of fil_prcs_flg check */
+
+				/*return(SUCCESS);*/
+
+				/* End of split_cntrl_rec */		
+
+		return isValid;
+	}
+
+	public static boolean isFileColTypeValid(String[] arrfileNameFields,
+			int indxFileNameFiled, String fileColType) {
+		boolean isValid = false;
+		if (arrfileNameFields != null
+				&& arrfileNameFields[indxFileNameFiled] != null
+				&& fileColType != null) {
+			isValid = arrfileNameFields[indxFileNameFiled].equals(fileColType);
+			if(!isValid){
+				sb.append("\nInvalid collateral type in the file name ");
+			}
+		}
+		
+		return isValid;
+	}
+
+	public static boolean isDataValidWithChecksome(List<String[]> dataList,
+			String[] arrChksm, int indxChk, int arrChksmLength) {
+		boolean isValid = true;
+
+		if (dataList != null && !dataList.isEmpty() && arrChksm != null
+				&& arrChksm.length == arrChksmLength) {
+			switch (indxChk) {
+			case 5:
+				/* Check whether the control record valuation amounts and the summation of the detail records valuation amounts matches */
+				BigDecimal controlGrossVltnAmt = new BigDecimal(arrChksm[5]);
+				if ( Math.abs((controlGrossVltnAmt.subtract(totalGrossValuation)).doubleValue()) >= 0.01)
+		 		{
+					sb.append("\nMismatch in the control and detail record amounts");
+					sb.append("\nControl Record Gross Value : " + controlGrossVltnAmt.doubleValue());
+					sb.append("\nDetail Record Gross Value	 : " + totalGrossValuation.doubleValue());
+					isValid = false;
+					
+				}		
+
+				break;
+				
+			case 6:
+				BigDecimal controlNetVltnAmt = new BigDecimal(arrChksm[5]);
+				if ( Math.abs((controlNetVltnAmt.subtract(totalNetValuation)).doubleValue()) >= 0.01)
+		 		{
+					sb.append("\nMismatch in the control and detail record amounts");
+					sb.append("\nControl Record Net Value : " + controlNetVltnAmt.doubleValue());
+					sb.append("\nDetail Record Net Value	 : " + totalNetValuation.doubleValue());
+					isValid = false;
+				}		
+
+				break;
+			case 7:
+				if (arrChksm[indxChk] != null) {
+					int rowCnt = Integer.parseInt(arrChksm[indxChk]);
+					if(dataList.size() != rowCnt){
+						isValid = false;
+						sb.append("\nMismateh in control record count and actual number of recs");
+					}
+				}
+				break;
+
+			default:
+				isValid = false;
+				break;
+			}
+		}
+		return isValid;
+	}
+
+	public static String getDateInYYYYMMDD(String strMMDDYYYYDate) {
+		StringBuilder sb = null;
+		String outDate = "";
+		if (strMMDDYYYYDate != null && strMMDDYYYYDate.length() == 8) {
+			sb = new StringBuilder(strMMDDYYYYDate);
+			sb.insert(2, "/");
+			sb.insert(5, "/");
+			strMMDDYYYYDate = sb.toString();
+		}
+		System.out.println("---strMMDDYYYYDate : " + strMMDDYYYYDate);
+		if (sb != null) {
+			SimpleDateFormat inSDF = new SimpleDateFormat("dd/mm/yyyy");
+			SimpleDateFormat outSDF = new SimpleDateFormat("yyyy/mm/dd");
+			try {
+				Date date = inSDF.parse(strMMDDYYYYDate);
+				outDate = outSDF.format(date);
+			} catch (ParseException ex) {
+				ex.printStackTrace();
+			}
+			if (outDate != null) {
+				outDate = outDate.replaceAll("/", "");
+			}
+
+		}
+		System.out.println("`````outDate : " + outDate);
+		return outDate;
+
+	}
+
+	
+
+	public static boolean isFileDataValid(List<String[]> fileDataList,
+			int fieldsCont, Map<String, Integer> constMap) {
+		boolean isValid = true;
+		int recNum = 0;
+		Set<String> uniqueSet = new HashSet<String>();
+		totalGrossValuation = new BigDecimal(0.0);
+		totalNetValuation = new BigDecimal(0.0);
+		/*BigDecimal */
+		if (fileDataList != null && !fileDataList.isEmpty()) {
+			for (String[] arrFields : fileDataList) {
+				recNum++;
+				if (arrFields != null && fieldsCont == arrFields.length) {
+					if (arrFields[0] == null || arrFields[0].length() == 0) {
+						sb.append("\nInvalid value found for record type at record no. ::  "
+								+ recNum);
+						isValid = false;
+					}
+					if (arrFields[0].length() > constMap
+							.get(FileDataConstants.REC_TYPE_LEN) - 1) {
+						sb.append("\nField length for record type is Exceeded at record no. ::  "
+								+ recNum);
+						isValid = false;
+					}
+					if (arrFields[1] == null || arrFields[1].length() == 0) {
+						sb.append("\nInvalid value found for Member type at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+
+					if (arrFields[1].length() > constMap
+							.get(FileDataConstants.MEM_TYPE_LEN) - 1) {
+						sb.append("\nField length for Member type is Exceeded at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+
+					if (arrFields[2] == null || arrFields[2].length() == 0) {
+						sb.append("\nInvalid value found for CL MEMBER at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+
+					if (arrFields[2].length() > constMap
+							.get(FileDataConstants.CLM_LEN) - 1) {
+						sb.append("\nField length for CL MEMBER is Exceeded at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+
+					if (arrFields[3].length() == 0) {
+						sb.append("\nInvalid value found for Symbol at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+					if (arrFields[3].length() > constMap
+							.get(FileDataConstants.SYMBOL_LEN) - 1) {
+						sb.append("\nField length for Symbol is Exceeded at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+
+					if (arrFields[4] == null || arrFields[4].length() == 0) {
+						sb.append("\nInvalid value found for Security Type at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+					if (arrFields[4].length() > constMap
+							.get(FileDataConstants.DEP_TYPE_LEN) - 1) {
+						sb.append("\nField length for Security Type is Exceeded at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+
+					if (arrFields[5] == null || arrFields[5].length() == 0) {
+						sb.append("\nInvalid value found for Quantity at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+
+					if (arrFields[5].length() > constMap
+							.get(FileDataConstants.QUANTITY_LEN) - 1) {
+						sb.append("\nField length for Quantity is Exceeded at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+
+					if (arrFields[6] == null || arrFields[6].length() == 0) {
+						sb.append("\nInvalid value found for Price at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+					if (arrFields[6].length() > constMap
+							.get(FileDataConstants.VAL_AMT_LEN) - 1) {
+						sb.append("\nField length for Price is Exceeded at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+
+					if (arrFields[7] == null || arrFields[7].length() == 0) {
+						sb.append("\nInvalid value found for Gross Valuation Amount at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+					if (arrFields[7].length() > constMap
+							.get(FileDataConstants.VAL_AMT_LEN) - 1) {
+						sb.append("\nField length for Gross Valuation Amount is Exceeded at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+
+					if (arrFields[8] == null || arrFields[8].length() == 0) {
+						sb.append("\nInvalid value found for Hair Cut at record no. ::   "
+								+ recNum);
+						isValid = false;
+					}
+					if (arrFields[8].length() > constMap
+							.get(FileDataConstants.HAIR_CUT_LEN)) /* Revision 1.2 */
+					{
+						sb.append("\nField length for Hair Cut is Exceeded at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+
+					if (arrFields[9] == null || arrFields[9].length() == 0) {
+						sb.append("\nInvalid value found for Net Amount at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+					if (arrFields[9].length() > constMap
+							.get(FileDataConstants.VAL_AMT_LEN) - 1) {
+						sb.append("\nField length for Net Amount is Exceeded at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+					if (arrFields[10] == null || arrFields[10].length() == 0) {
+						sb.append("\nInvalid value found for Quotation Date at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+					if (arrFields[10].length() > constMap
+							.get(FileDataConstants.DT_LEN) - 1) {
+						sb.append("\nField length for Quotation Date is Exceeded at record no. ::    "
+								+ recNum);
+						isValid = false;
+					}
+					
+					if(checkDuplicateRecord(arrFields, uniqueSet)){
+						sb.append("\nDuplicate record found at record no. " + recNum);
+						isValid = false;
+					}
+					
+					//int retval=vld_rec_exist(vld_no_of_mem_code, vld_no_of_col_type, data_mem_code, data_col_type);
+					
+					if(!CommonUtil.isNumeric(arrFields[7]))
+					{
+						sb.append("\nInvalid gross valuation amount in the file at record number ::    " + recNum);
+						sb.append("\nInvalid gross amount  ::    " + arrFields[7]);
+						isValid = false;
+					}
+					
+					if(!CommonUtil.isNumeric(arrFields[9]))
+					{
+						sb.append("\nInvalid net valuation amount in the file at record number ::    " + recNum);
+						sb.append("\nInvalid net valuation amount  ::    " + arrFields[9]);
+						isValid = false;
+					}
+					
+					BigDecimal individualGrossValuation =new BigDecimal(arrFields[7]);
+					BigDecimal individualNetValuation =new BigDecimal(arrFields[9]);
+
+
+					if(individualGrossValuation.compareTo(individualNetValuation)<0)
+					{
+						sb.append("\nNet Valuation Amount greater than Gross Valuation amount  found at Record number ::      " + recNum);
+						sb.append("\nNet valuation amount  ::    " +  individualNetValuation.doubleValue());
+						sb.append("\nGross valuation amount  ::   " + individualGrossValuation.doubleValue());
+						isValid = false;
+					}		
+
+					totalGrossValuation = totalGrossValuation.add(individualGrossValuation);
+					totalNetValuation = totalNetValuation.add(individualNetValuation);
+				
+
+				} else {
+					isValid = false;
+					sb.append("Mismatch in detail records at record number ")
+							.append(recNum);
+				}
+			}
+			
+			
+		} else {
+			isValid = false;
+		}
+		System.out.println("" + sb.toString());
+		return isValid;
+
+	}
+	
+	
+	
+	public static boolean checkDuplicateRecord(String[] arrFields, Set<String> uniqueSet){ // need clarification
+		boolean isExist = false;
+		String record = null;
+		if(arrFields!=null && arrFields.length>0){
+			StringBuffer rec = new StringBuffer();
+			for(String s : arrFields){
+				rec.append(s);
+			}
+			if(rec!=null){
+				record = rec.toString();
+			}
+		}
+            if (uniqueSet.contains(record)){
+            	isExist = true;
+            }else{
+                uniqueSet.add(record);
+                isExist = false;
+            }		
+		return isExist;
+	}
+	
+	
+
+}
+------------------------------------------------------------------------------------------------------------------------------
+
+commonutil::::
+-------------------------------------------------------------------------------------------------------------------------------
+package com.ncdex.ncms.ncdbsdvl;
+
+public class CommonUtil {
+	public static int getArrayLength(Object[] arrData){
+		if(arrData==null){
+			return 0;
+		}else{
+			return arrData.length;
+		}
+	}
+	
+	public static int getStringLength(String data){
+		if(data==null || data.equals("") || data.isEmpty()){
+			return 0;
+		}else{
+			return data.length();
+		}
+	}
+	
+	public static boolean isNumeric(String strNum) {
+		return strNum.matches("-?\\d+(\\.\\d+)?");
+	}
+}
+---------------------------------------------------------------------------------------------------------------------------------
